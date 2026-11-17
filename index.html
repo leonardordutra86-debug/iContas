@@ -4,20 +4,17 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     
-    <!-- Configurações PWA para iPhone (Tela Cheia e Barra de Status) -->
+    <!-- Configurações PWA para iPhone -->
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="Contas">
     
-    <!-- Ícone gerado automaticamente para a Tela Inicial do iPhone -->
     <link rel="apple-touch-icon" id="app-icon" href="">
-    
     <title>Contas a vencer</title>
+    
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
-        tailwind.config = {
-            darkMode: 'media', // Segue o modo Claro/Escuro do iPhone automaticamente
-        }
+        tailwind.config = { darkMode: 'media' }
     </script>
     <style>
         body {
@@ -26,19 +23,13 @@
             padding-top: env(safe-area-inset-top);
             padding-bottom: env(safe-area-inset-bottom);
         }
-        /* Animação suave para o modal estilo Sheet do iOS */
-        .sheet-enter {
-            transform: translateY(100%);
-            transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1);
-        }
-        .sheet-open {
-            transform: translateY(0);
-        }
+        .sheet-enter { transform: translateY(100%); transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1); }
+        .sheet-open { transform: translateY(0); }
     </style>
 </head>
 <body class="bg-[#F2F2F7] dark:bg-black text-black dark:text-white min-h-screen select-none">
 
-    <!-- Cabeçalho estilo NavigationStack (Large Title) -->
+    <!-- Cabeçalho -->
     <header class="sticky top-0 z-10 bg-[#F2F2F7]/85 dark:bg-black/85 backdrop-blur-md px-4 pt-3 pb-2 border-b border-gray-200/60 dark:border-gray-800/60">
         <div class="flex justify-end items-center h-8">
             <button onclick="openModal()" aria-label="Nova conta" class="text-[#007AFF] active:opacity-50 p-1">
@@ -52,8 +43,7 @@
 
     <!-- Conteúdo Principal -->
     <main class="px-4 py-4 max-w-lg mx-auto space-y-4 pb-24">
-        
-        <!-- Banner de Aviso no Topo (Equivalente ao store.banner) -->
+        <!-- Banner de Aviso -->
         <div id="alert-banner" class="hidden rounded-xl p-3.5 flex items-center gap-3 font-semibold text-sm shadow-sm">
             <svg class="w-5 h-5 shrink-0" fill="currentColor" viewBox="0 0 20 20">
                 <path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z"/>
@@ -61,34 +51,31 @@
             <span id="alert-text"></span>
         </div>
 
-        <!-- Estado Vazio -->
+        <!-- Indicador de Carregamento / Vazio -->
+        <div id="loading-state" class="text-center py-16 text-gray-400">Carregando contas da nuvem...</div>
         <div id="empty-state" class="hidden text-center py-16 text-gray-500 dark:text-gray-400">
             <p class="text-base">Nenhuma conta ainda.<br>Toque em <strong>+</strong> para começar.</p>
         </div>
 
-        <!-- Lista de Contas -->
-        <div id="bills-list" class="bg-white dark:bg-[#1C1C1E] rounded-2xl overflow-hidden divide-y divide-gray-200 dark:divide-gray-800 shadow-sm">
-            <!-- Itens renderizados via JS -->
-        </div>
+        <!-- Lista -->
+        <div id="bills-list" class="hidden bg-white dark:bg-[#1C1C1E] rounded-2xl overflow-hidden divide-y divide-gray-200 dark:divide-gray-800 shadow-sm"></div>
     </main>
 
-    <!-- Modal / Sheet estilo iOS (BillForm) -->
+    <!-- Modal / Sheet -->
     <div id="modal-backdrop" onclick="closeModal()" class="fixed inset-0 bg-black/40 z-40 hidden opacity-0 transition-opacity duration-300"></div>
     
     <div id="bill-sheet" class="fixed inset-x-0 bottom-0 z-50 bg-[#F2F2F7] dark:bg-[#1C1C1E] rounded-t-2xl shadow-2xl sheet-enter hidden pb-8">
-        <!-- Barra superior do Sheet -->
         <div class="flex items-center justify-between px-4 py-3.5 border-b border-gray-200 dark:border-gray-800">
             <button onclick="closeModal()" class="text-[#007AFF] text-base active:opacity-50">Cancelar</button>
             <h2 id="modal-title" class="font-semibold text-base">Nova conta</h2>
             <button id="save-btn" onclick="saveBill()" class="text-[#007AFF] font-semibold text-base disabled:opacity-30 active:opacity-50" disabled>Salvar</button>
         </div>
 
-        <!-- Campos do Formulário -->
         <div class="p-4 space-y-4">
             <div class="bg-white dark:bg-[#2C2C2E] rounded-xl overflow-hidden divide-y divide-gray-200 dark:divide-gray-700">
                 <div class="px-4 py-3">
                     <input type="text" id="bill-name" placeholder="Nome da conta (ex: Luz, Internet)" oninput="validateForm()"
-                        class="w-full bg-transparent text-base outline-none placeholder-gray-400 dark:placeholder-gray-500">
+                        class="w-full bg-transparent text-base outline-none placeholder-gray-400">
                 </div>
                 <div class="px-4 py-3 flex items-center justify-between">
                     <label for="bill-date" class="text-base">Vencimento</label>
@@ -97,174 +84,61 @@
                 </div>
             </div>
 
-            <!-- Botão de Excluir (Visível apenas ao editar, substituindo o swipe) -->
-            <button id="delete-btn" onclick="deleteCurrentBill()" class="hidden w-full bg-white dark:bg-[#2C2C2E] text-red-500 font-medium py-3 rounded-xl active:bg-gray-100 dark:active:bg-gray-800">
+            <button id="delete-btn" onclick="deleteCurrentBill()" class="hidden w-full bg-white dark:bg-[#2C2C2E] text-red-500 font-medium py-3 rounded-xl active:bg-gray-100">
                 Excluir conta
             </button>
         </div>
     </div>
 
-    <script>
-        // --- Gerador de Ícone Nativo para a Tela Inicial ---
-        (function generateAppIcon() {
-            const canvas = document.createElement('canvas');
-            canvas.width = 180;
-            canvas.height = 180;
-            const ctx = canvas.getContext('2d');
-            
-            // Fundo azul estilo iOS
-            ctx.fillStyle = '#007AFF';
-            ctx.fillRect(0, 0, 180, 180);
-            
-            // Símbolo de check/calendário branco
-            ctx.fillStyle = '#FFFFFF';
-            ctx.font = 'bold 90px -apple-system, sans-serif';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText('✓', 90, 95);
-            
-            document.getElementById('app-icon').href = canvas.toDataURL('image/png');
-        })();
+    <!-- Firebase SDK (Modular) -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-        // --- Estado e Persistência (Equivalente ao BillStore) ---
-        const STORAGE_KEY = 'contas-v1';
-        let bills = JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
+        // 🔥 COLE SUAS CREDENCIAIS DO FIREBASE ABAIXO:
+        const firebaseConfig = {
+            apiKey: "AIzaSyCXsXTkTOtkXHyge75SDkgfJ2VsPzAizH8",
+            authDomain: "icontas-53234.firebaseapp.com",
+            projectId: "icontas-53234",
+            storageBucket: "icontas-53234.firebasestorage.app",
+            messagingSenderId: "S88307899128",
+            appId: "1:88307899128:web:3b136e2ac877540580790d"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        let bills = [];
         let editingId = null;
 
-        function saveToStorage() {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(bills));
+        // Gerar ícone automático do app
+        const canvas = document.createElement('canvas');
+        canvas.width = 180; canvas.height = 180;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#007AFF'; ctx.fillRect(0, 0, 180, 180);
+        ctx.fillStyle = '#FFFFFF'; ctx.font = 'bold 90px -apple-system, sans-serif';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('✓', 90, 95);
+        document.getElementById('app-icon').href = canvas.toDataURL('image/png');
+
+        // Escutar alterações em tempo real no Firestore
+        onSnapshot(collection(db, "bills"), (snapshot) => {
+            bills = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            document.getElementById('loading-state').classList.add('hidden');
             render();
-        }
+        }, (error) => {
+            console.error("Erro ao carregar dados:", error);
+            document.getElementById('loading-state').textContent = "Erro ao conectar com a nuvem. Verifique as credenciais.";
+        });
 
-        // --- Cálculos de Data e Status (Equivalente à struct Bill) ---
-        function getStartOfDay(dateObj) {
-            return new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate());
-        }
-
-        function parseLocalDate(isoDateStr) {
-            const [y, m, d] = isoDateStr.split('-').map(Number);
-            return new Date(y, m - 1, d);
-        }
-
-        function getDaysLeft(dueDateStr) {
-            const hoje = getStartOfDay(new Date());
-            const venc = parseLocalDate(dueDateStr);
-            const diffTime = venc - hoje;
-            return Math.round(diffTime / (1000 * 60 * 60 * 24));
-        }
-
-        function getStatusInfo(bill) {
-            if (bill.isPaid) {
-                return { text: 'Paga', colorClass: 'text-green-600 dark:text-green-500' };
-            }
-            const n = getDaysLeft(bill.dueDate);
-            let text = '';
-            if (n < -1) text = `Venceu há ${-n} dias`;
-            else if (n === -1) text = 'Venceu há 1 dia';
-            else if (n === 0) text = 'Vence hoje';
-            else if (n === 1) text = 'Vence amanhã';
-            else text = `Vence em ${n} dias`;
-
-            let colorClass = 'text-gray-500 dark:text-gray-400';
-            if (n < 0) colorClass = 'text-red-600 dark:text-red-500';
-            else if (n <= 3) colorClass = 'text-orange-500 dark:text-orange-400';
-
-            return { text, colorClass };
-        }
-
-        function formatShortDate(dueDateStr) {
-            const date = parseLocalDate(dueDateStr);
-            return date.toLocaleDateString('pt-BR', { day: 'numeric', month: 'short' }).replace('.', '');
-        }
-
-        // --- Renderização da Tela ---
-        function render() {
-            const listEl = document.getElementById('bills-list');
-            const emptyEl = document.getElementById('empty-state');
-            const bannerEl = document.getElementById('alert-banner');
-            const bannerTextEl = document.getElementById('alert-text');
-
-            // Ordenação: Não pagas primeiro, depois por data de vencimento
-            const sorted = [...bills].sort((a, b) => {
-                if (a.isPaid !== b.isPaid) return a.isPaid ? 1 : -1;
-                return parseLocalDate(a.dueDate) - parseLocalDate(b.dueDate);
-            });
-
-            // Banner de Aviso
-            const open = bills.filter(b => !b.isPaid);
-            const late = open.filter(b => getDaysLeft(b.dueDate) < 0);
-            const soon = open.filter(b => getDaysLeft(b.dueDate) <= 3);
-
-            bannerEl.className = 'hidden rounded-xl p-3.5 flex items-center gap-3 font-semibold text-sm shadow-sm';
-            if (late.length > 0) {
-                bannerEl.classList.remove('hidden');
-                bannerEl.classList.add('bg-red-500/15', 'text-red-600', 'dark:text-red-400');
-                bannerTextEl.textContent = late.length === 1 
-                    ? `1 conta atrasada: ${late[0].name}` 
-                    : `${late.length} contas atrasadas`;
-            } else if (soon.length > 0) {
-                bannerEl.classList.remove('hidden');
-                bannerEl.classList.add('bg-orange-500/15', 'text-orange-600', 'dark:text-orange-400');
-                bannerTextEl.textContent = soon.length === 1 
-                    ? `1 conta vence em breve: ${soon[0].name}` 
-                    : `${soon.length} contas vencem em breve`;
-            }
-
-            // Lista Vazia vs Preenchida
-            if (sorted.length === 0) {
-                listEl.classList.add('hidden');
-                emptyEl.classList.remove('hidden');
-                return;
-            }
-
-            emptyEl.classList.add('hidden');
-            listEl.classList.remove('hidden');
-            listEl.innerHTML = '';
-
-            sorted.forEach(bill => {
-                const status = getStatusInfo(bill);
-                const row = document.createElement('div');
-                row.className = 'flex items-center justify-between px-4 py-3.5 gap-2';
-
-                row.innerHTML = `
-                    <div class="min-w-0 flex-1">
-                        <div class="font-semibold text-[17px] truncate ${bill.isPaid ? 'line-through text-gray-400 dark:text-gray-500' : ''}">
-                            ${escapeHTML(bill.name)}
-                        </div>
-                        <div class="flex items-center gap-1.5 text-[13px] mt-0.5">
-                            <span class="font-bold ${status.colorClass}">${status.text}</span>
-                            <span class="text-gray-400 dark:text-gray-500">• ${formatShortDate(bill.dueDate)}</span>
-                        </div>
-                    </div>
-
-                    <button onclick="openModal('${bill.id}')" aria-label="Editar" class="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 active:opacity-50">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
-                        </svg>
-                    </button>
-
-                    <button onclick="togglePaid('${bill.id}')" 
-                        class="text-[14px] font-bold min-w-[88px] py-1.5 px-3 rounded-full border-2 transition-colors active:scale-95
-                        ${bill.isPaid 
-                            ? 'bg-green-600 border-green-600 text-white' 
-                            : 'border-black dark:border-white text-black dark:text-white'}">
-                        ${bill.isPaid ? '✓ Paga' : 'Não paga'}
-                    </button>
-                `;
-                listEl.appendChild(row);
-            });
-        }
-
-        // --- Ações ---
-        function togglePaid(id) {
+        // Funções Globais expostas para o HTML
+        window.togglePaid = async function(id) {
             const bill = bills.find(b => b.id === id);
             if (bill) {
-                bill.isPaid = !bill.isPaid;
-                saveToStorage();
+                await updateDoc(doc(db, "bills", id), { isPaid: !bill.isPaid });
             }
         }
 
-        function openModal(id = null) {
+        window.openModal = function(id = null) {
             editingId = id;
             const modalTitle = document.getElementById('modal-title');
             const nameInput = document.getElementById('bill-name');
@@ -280,7 +154,6 @@
             } else {
                 modalTitle.textContent = 'Nova conta';
                 nameInput.value = '';
-                // Data padrão: +3 dias (igual ao seu Swift)
                 const defaultDate = new Date();
                 defaultDate.setDate(defaultDate.getDate() + 3);
                 dateInput.value = defaultDate.toISOString().split('T')[0];
@@ -288,12 +161,10 @@
             }
 
             validateForm();
-
             const backdrop = document.getElementById('modal-backdrop');
             const sheet = document.getElementById('bill-sheet');
             backdrop.classList.remove('hidden');
             sheet.classList.remove('hidden');
-            
             requestAnimationFrame(() => {
                 backdrop.classList.remove('opacity-0');
                 sheet.classList.add('sheet-open');
@@ -301,53 +172,129 @@
             setTimeout(() => nameInput.focus(), 100);
         }
 
-        function closeModal() {
+        window.closeModal = function() {
             const backdrop = document.getElementById('modal-backdrop');
             const sheet = document.getElementById('bill-sheet');
             backdrop.classList.add('opacity-0');
             sheet.classList.remove('sheet-open');
-
-            setTimeout(() => {
-                backdrop.classList.add('hidden');
-                sheet.classList.add('hidden');
-            }, 300);
+            setTimeout(() => { backdrop.classList.add('hidden'); sheet.classList.add('hidden'); }, 300);
         }
 
-        function validateForm() {
+        window.validateForm = function() {
             const name = document.getElementById('bill-name').value.trim();
             const date = document.getElementById('bill-date').value;
             document.getElementById('save-btn').disabled = !(name.length > 0 && date);
         }
 
-        function saveBill() {
+        window.saveBill = async function() {
             const name = document.getElementById('bill-name').value.trim();
             const dueDate = document.getElementById('bill-date').value;
             if (!name || !dueDate) return;
 
             if (editingId) {
-                const bill = bills.find(b => b.id === editingId);
-                if (bill) {
-                    bill.name = name;
-                    bill.dueDate = dueDate;
-                }
+                await updateDoc(doc(db, "bills", editingId), { name, dueDate });
             } else {
-                bills.push({
-                    id: crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(),
-                    name,
-                    dueDate,
-                    isPaid: false
-                });
+                await addDoc(collection(db, "bills"), { name, dueDate, isPaid: false });
             }
-
-            saveToStorage();
             closeModal();
         }
 
-        function deleteCurrentBill() {
+        window.deleteCurrentBill = async function() {
             if (!editingId) return;
-            bills = bills.filter(b => b.id !== editingId);
-            saveToStorage();
+            await deleteDoc(doc(db, "bills", editingId));
             closeModal();
+        }
+
+        function getStartOfDay(dateObj) {
+            return new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate());
+        }
+
+        function parseLocalDate(isoDateStr) {
+            const [y, m, d] = isoDateStr.split('-').map(Number);
+            return new Date(y, m - 1, d);
+        }
+
+        function getDaysLeft(dueDateStr) {
+            const hoje = getStartOfDay(new Date());
+            const venc = parseLocalDate(dueDateStr);
+            return Math.round((venc - hoje) / (1000 * 60 * 60 * 24));
+        }
+
+        function getStatusInfo(bill) {
+            if (bill.isPaid) return { text: 'Paga', colorClass: 'text-green-600 dark:text-green-500' };
+            const n = getDaysLeft(bill.dueDate);
+            let text = n < -1 ? `Venceu há ${-n} dias` : n === -1 ? 'Venceu há 1 dia' : n === 0 ? 'Vence hoje' : n === 1 ? 'Vence amanhã' : `Vence em ${n} dias`;
+            let colorClass = n < 0 ? 'text-red-600 dark:text-red-500' : n <= 3 ? 'text-orange-500 dark:text-orange-400' : 'text-gray-500 dark:text-gray-400';
+            return { text, colorClass };
+        }
+
+        function formatShortDate(dueDateStr) {
+            return parseLocalDate(dueDateStr).toLocaleDateString('pt-BR', { day: 'numeric', month: 'short' }).replace('.', '');
+        }
+
+        function render() {
+            const listEl = document.getElementById('bills-list');
+            const emptyEl = document.getElementById('empty-state');
+            const bannerEl = document.getElementById('alert-banner');
+            const bannerTextEl = document.getElementById('alert-text');
+
+            const sorted = [...bills].sort((a, b) => {
+                if (a.isPaid !== b.isPaid) return a.isPaid ? 1 : -1;
+                return parseLocalDate(a.dueDate) - parseLocalDate(b.dueDate);
+            });
+
+            const open = bills.filter(b => !b.isPaid);
+            const late = open.filter(b => getDaysLeft(b.dueDate) < 0);
+            const soon = open.filter(b => getDaysLeft(b.dueDate) <= 3);
+
+            bannerEl.className = 'hidden rounded-xl p-3.5 flex items-center gap-3 font-semibold text-sm shadow-sm';
+            if (late.length > 0) {
+                bannerEl.classList.remove('hidden');
+                bannerEl.classList.add('bg-red-500/15', 'text-red-600', 'dark:text-red-400');
+                bannerTextEl.textContent = late.length === 1 ? `1 conta atrasada: ${late[0].name}` : `${late.length} contas atrasadas`;
+            } else if (soon.length > 0) {
+                bannerEl.classList.remove('hidden');
+                bannerEl.classList.add('bg-orange-500/15', 'text-orange-600', 'dark:text-orange-400');
+                bannerTextEl.textContent = soon.length === 1 ? `1 conta vence em breve: ${soon[0].name}` : `${soon.length} contas vencem em breve`;
+            }
+
+            if (sorted.length === 0) {
+                listEl.classList.add('hidden');
+                emptyEl.classList.remove('hidden');
+                return;
+            }
+
+            emptyEl.classList.add('hidden');
+            listEl.classList.remove('hidden');
+            listEl.innerHTML = '';
+
+            sorted.forEach(bill => {
+                const status = getStatusInfo(bill);
+                const row = document.createElement('div');
+                row.className = 'flex items-center justify-between px-4 py-3.5 gap-2';
+                row.innerHTML = `
+                    <div class="min-w-0 flex-1">
+                        <div class="font-semibold text-[17px] truncate ${bill.isPaid ? 'line-through text-gray-400 dark:text-gray-500' : ''}">
+                            ${escapeHTML(bill.name)}
+                        </div>
+                        <div class="flex items-center gap-1.5 text-[13px] mt-0.5">
+                            <span class="font-bold ${status.colorClass}">${status.text}</span>
+                            <span class="text-gray-400 dark:text-gray-500">• ${formatShortDate(bill.dueDate)}</span>
+                        </div>
+                    </div>
+                    <button onclick="openModal('${bill.id}')" aria-label="Editar" class="p-2 text-gray-400 hover:text-gray-300 active:opacity-50">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
+                        </svg>
+                    </button>
+                    <button onclick="togglePaid('${bill.id}')" 
+                        class="text-[14px] font-bold min-w-[88px] py-1.5 px-3 rounded-full border-2 transition-colors active:scale-95
+                        ${bill.isPaid ? 'bg-green-600 border-green-600 text-white' : 'border-black dark:border-white text-black dark:text-white'}">
+                        ${bill.isPaid ? '✓ Paga' : 'Não paga'}
+                    </button>
+                `;
+                listEl.appendChild(row);
+            });
         }
 
         function escapeHTML(str) {
@@ -355,9 +302,6 @@
             div.textContent = str;
             return div.innerHTML;
         }
-
-        // Inicializa o app
-        render();
     </script>
 </body>
 </html>
