@@ -1,0 +1,8 @@
+/* Ajustes específicos para PWA em tela cheia no iOS */
+html, body {
+    height: 100%;
+    overflow: hidden;
+    background-color: #111827;
+    -webkit-user-select: none;
+    user-select: none;
+}
