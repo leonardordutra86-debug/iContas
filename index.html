@@ -75,6 +75,7 @@
                     </svg>
                 </button>
             </div>
+            <p id="user-greeting" class="text-[14px] font-medium text-gray-500 dark:text-gray-400 mt-1">Olá.</p>
             <h1 class="text-[34px] font-bold tracking-tight leading-tight">Contas a vencer</h1>
         </header>
 
@@ -85,6 +86,9 @@
                 </svg>
                 <span id="alert-text"></span>
             </div>
+
+            <!-- Toast discreto quando próxima parcela recorrente é criada -->
+            <div id="recurring-toast" class="hidden rounded-xl p-3 bg-[#007AFF]/15 text-[#007AFF] text-xs font-semibold text-center"></div>
 
             <div id="empty-state" class="hidden text-center py-16 text-gray-500 dark:text-gray-400">
                 <p class="text-base">Nenhuma conta ainda.<br>Toque em <strong>+</strong> para começar.</p>
@@ -115,6 +119,16 @@
                     <input type="date" id="bill-date" onchange="validateForm()"
                         class="bg-gray-100 dark:bg-[#3A3A3C] px-3 py-1.5 rounded-lg text-base outline-none text-right">
                 </div>
+                <label for="bill-recurring" class="px-4 py-3.5 flex items-center justify-between cursor-pointer">
+                    <div>
+                        <div class="text-base">Repetir mensalmente</div>
+                        <div class="text-xs text-gray-500 dark:text-gray-400">Cria o próximo mês ao marcar como paga</div>
+                    </div>
+                    <div class="relative inline-flex items-center">
+                        <input type="checkbox" id="bill-recurring" class="sr-only peer">
+                        <div class="w-11 h-6 bg-gray-300 dark:bg-gray-600 rounded-full peer peer-checked:bg-[#34C759] transition-colors after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-5 shadow-inner"></div>
+                    </div>
+                </label>
             </div>
 
             <button id="delete-btn" onclick="deleteCurrentBill()" class="hidden w-full bg-white dark:bg-[#2C2C2E] text-red-500 font-medium py-3 rounded-xl active:bg-gray-100">
@@ -137,14 +151,14 @@
         import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
         import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-        // 🔥 COLE SUAS CREDENCIAIS DO FIREBASE ABAIXO:
+        // 🔥 COLE SUAS CREDENCIAIS DO FIREBASE ABAIXO (sem measurementId):
         const firebaseConfig = {
-  apiKey: "AIzaSyCXsXTkTOtkXHyge75SDkgfJ2VsPzAizH8",
-  authDomain: "icontas-53234.firebaseapp.com",
-  projectId: "icontas-53234",
-  storageBucket: "icontas-53234.firebasestorage.app",
-  messagingSenderId: "88307899128",
-  appId: "1:88307899128:web:3b136e2ac877540580790d"
+            apiKey: "SUA_API_KEY",
+            authDomain: "SEU_PROJETO.firebaseapp.com",
+            projectId: "SEU_PROJECT_ID",
+            storageBucket: "SEU_PROJETO.appspot.com",
+            messagingSenderId: "SEU_MESSAGING_SENDER_ID",
+            appId: "SEU_APP_ID"
         };
 
         let app, auth, db;
@@ -168,10 +182,22 @@
             return collection(db, "users", currentUser.uid, "bills");
         }
 
+        function formatUserName(user) {
+            if (user.displayName && user.displayName.trim()) {
+                return user.displayName.trim();
+            }
+            if (user.email) {
+                const rawName = user.email.split('@')[0].replace(/[._-]+/g, ' ').trim();
+                return rawName.charAt(0).toUpperCase() + rawName.slice(1);
+            }
+            return 'Usuário';
+        }
+
         if (auth) {
             onAuthStateChanged(auth, (user) => {
                 currentUser = user;
                 if (user) {
+                    document.getElementById('user-greeting').textContent = `Olá ${formatUserName(user)}.`;
                     document.getElementById('login-screen').classList.add('hidden');
                     document.getElementById('app-screen').classList.remove('hidden');
                     startListeningBills();
@@ -227,11 +253,49 @@
             });
         }
 
+        // Soma 1 mês preservando o dia (ajusta para o último dia do mês se necessário)
+        function addOneMonthISO(isoDateStr) {
+            const [y, m, d] = isoDateStr.split('-').map(Number);
+            const targetMonthIndex = m; // m já é 1-based, então no Date() representa o mês seguinte
+            const daysInTargetMonth = new Date(y, targetMonthIndex + 1, 0).getDate();
+            const safeDay = Math.min(d, daysInTargetMonth);
+            const nextDate = new Date(y, targetMonthIndex, safeDay);
+
+            const ny = nextDate.getFullYear();
+            const nm = String(nextDate.getMonth() + 1).padStart(2, '0');
+            const nd = String(nextDate.getDate()).padStart(2, '0');
+            return `${ny}-${nm}-${nd}`;
+        }
+
+        function showToast(msg) {
+            const toast = document.getElementById('recurring-toast');
+            toast.textContent = msg;
+            toast.classList.remove('hidden');
+            clearTimeout(window._toastTimer);
+            window._toastTimer = setTimeout(() => toast.classList.add('hidden'), 3500);
+        }
+
         window.togglePaid = async function(id) {
             const colRef = getUserBillsCollection();
             const bill = bills.find(b => b.id === id);
-            if (colRef && bill) {
-                await updateDoc(doc(colRef, id), { isPaid: !bill.isPaid });
+            if (!colRef || !bill) return;
+
+            const markingAsPaid = !bill.isPaid;
+
+            // Se for conta recorrente e estiver sendo marcada como paga pela primeira vez, gera a do próximo mês
+            if (markingAsPaid && bill.isRecurring && !bill.nextGenerated) {
+                const nextDueDate = addOneMonthISO(bill.dueDate);
+                await updateDoc(doc(colRef, id), { isPaid: true, nextGenerated: true });
+                await addDoc(colRef, {
+                    name: bill.name,
+                    dueDate: nextDueDate,
+                    isPaid: false,
+                    isRecurring: true,
+                    nextGenerated: false
+                });
+                showToast(`Próxima "${bill.name}" criada para ${formatShortDate(nextDueDate)}.`);
+            } else {
+                await updateDoc(doc(colRef, id), { isPaid: markingAsPaid });
             }
         }
 
@@ -247,6 +311,7 @@
             const modalTitle = document.getElementById('modal-title');
             const nameInput = document.getElementById('bill-name');
             const dateInput = document.getElementById('bill-date');
+            const recurringInput = document.getElementById('bill-recurring');
             const deleteBtn = document.getElementById('delete-btn');
 
             if (id) {
@@ -254,6 +319,7 @@
                 modalTitle.textContent = 'Editar conta';
                 nameInput.value = bill.name;
                 dateInput.value = bill.dueDate;
+                recurringInput.checked = Boolean(bill.isRecurring);
                 deleteBtn.classList.remove('hidden');
             } else {
                 modalTitle.textContent = 'Nova conta';
@@ -261,6 +327,7 @@
                 const defaultDate = new Date();
                 defaultDate.setDate(defaultDate.getDate() + 3);
                 dateInput.value = defaultDate.toISOString().split('T')[0];
+                recurringInput.checked = false;
                 deleteBtn.classList.add('hidden');
             }
 
@@ -294,12 +361,19 @@
             const colRef = getUserBillsCollection();
             const name = document.getElementById('bill-name').value.trim();
             const dueDate = document.getElementById('bill-date').value;
+            const isRecurring = document.getElementById('bill-recurring').checked;
             if (!colRef || !name || !dueDate) return;
 
             if (editingId) {
-                await updateDoc(doc(colRef, editingId), { name, dueDate });
+                await updateDoc(doc(colRef, editingId), { name, dueDate, isRecurring });
             } else {
-                await addDoc(colRef, { name, dueDate, isPaid: false });
+                await addDoc(colRef, {
+                    name,
+                    dueDate,
+                    isPaid: false,
+                    isRecurring,
+                    nextGenerated: false
+                });
             }
             closeModal();
         }
@@ -446,13 +520,20 @@
                     </svg>
                 `;
 
+                const recurringBadge = bill.isRecurring
+                    ? `<span class="inline-flex items-center gap-0.5 text-[11px] font-medium px-1.5 py-0.5 rounded bg-blue-500/10 text-[#007AFF]">↻ Mensal</span>`
+                    : '';
+
                 const contentEl = document.createElement('div');
                 contentEl.className = 'swipe-content relative bg-white dark:bg-[#1C1C1E] flex items-center justify-between px-4 py-3.5 gap-2 z-10';
                 contentEl.dataset.open = 'false';
                 contentEl.innerHTML = `
                     <div class="min-w-0 flex-1">
-                        <div class="font-semibold text-[17px] truncate ${bill.isPaid ? 'line-through text-gray-400 dark:text-gray-500' : ''}">
-                            ${escapeHTML(bill.name)}
+                        <div class="flex items-center gap-1.5">
+                            <span class="font-semibold text-[17px] truncate ${bill.isPaid ? 'line-through text-gray-400 dark:text-gray-500' : ''}">
+                                ${escapeHTML(bill.name)}
+                            </span>
+                            ${recurringBadge}
                         </div>
                         <div class="flex items-center gap-1.5 text-[13px] mt-0.5">
                             <span class="font-bold ${status.colorClass}">${status.text}</span>
