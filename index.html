@@ -195,10 +195,12 @@
 
             try {
                 await signInWithEmailAndPassword(auth, email, password);
-            } catch (err) {
-                console.error(err);
-                errorEl.textContent = `${err.code || 'Erro'}: ${err.message}`;
+           } catch (err) {
+                errorEl.textContent = 'E-mail ou senha incorretos.';
                 errorEl.classList.remove('hidden');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Entrar';
             }
         }
 
