@@ -8,7 +8,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="Contas">
     
-   <link rel="apple-touch-icon" href="icon.png">
+    <link rel="apple-touch-icon" href="icon.png">
     <title>Contas a vencer</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
@@ -31,10 +31,10 @@
 </head>
 <body class="bg-[#F2F2F7] dark:bg-black text-black dark:text-white min-h-screen select-none overflow-x-hidden">
 
-    <!-- Aviso de Erro Técnico (só aparece se houver erro de código/chave) -->
+    <!-- Aviso de Erro Técnico -->
     <div id="fatal-error" class="hidden fixed top-4 inset-x-4 z-50 bg-red-600 text-white text-xs p-3 rounded-xl shadow-lg break-words"></div>
 
-    <!-- ================= TELA 1: LOGIN (Visível por padrão) ================= -->
+    <!-- ================= TELA 1: LOGIN ================= -->
     <div id="login-screen" class="min-h-screen flex flex-col justify-center px-6 max-w-md mx-auto">
         <div class="text-center mb-8">
             <img src="icon.png" alt="Ícone do app" class="w-16 h-16 rounded-2xl mx-auto mb-4 shadow-md object-cover">
@@ -123,7 +123,6 @@
         </div>
     </div>
 
-    <!-- Capturador global de erros para diagnóstico visual -->
     <script>
         window.onerror = function(msg) {
             const box = document.getElementById('fatal-error');
@@ -159,20 +158,27 @@
             box.classList.remove('hidden');
         }
 
+        let currentUser = null;
         let bills = [];
         let editingId = null;
         let unsubscribeBills = null;
 
-
+        function getUserBillsCollection() {
+            if (!db || !currentUser) return null;
+            return collection(db, "users", currentUser.uid, "bills");
+        }
 
         if (auth) {
             onAuthStateChanged(auth, (user) => {
+                currentUser = user;
                 if (user) {
                     document.getElementById('login-screen').classList.add('hidden');
                     document.getElementById('app-screen').classList.remove('hidden');
                     startListeningBills();
                 } else {
                     if (unsubscribeBills) { unsubscribeBills(); unsubscribeBills = null; }
+                    bills = [];
+                    render();
                     document.getElementById('app-screen').classList.add('hidden');
                     document.getElementById('login-screen').classList.remove('hidden');
                 }
@@ -207,8 +213,11 @@
         }
 
         function startListeningBills() {
-            if (unsubscribeBills || !db) return;
-            unsubscribeBills = onSnapshot(collection(db, "bills"), (snapshot) => {
+            if (unsubscribeBills) { unsubscribeBills(); unsubscribeBills = null; }
+            const colRef = getUserBillsCollection();
+            if (!colRef) return;
+
+            unsubscribeBills = onSnapshot(colRef, (snapshot) => {
                 bills = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 render();
             }, (error) => {
@@ -219,12 +228,17 @@
         }
 
         window.togglePaid = async function(id) {
+            const colRef = getUserBillsCollection();
             const bill = bills.find(b => b.id === id);
-            if (bill) await updateDoc(doc(db, "bills", id), { isPaid: !bill.isPaid });
+            if (colRef && bill) {
+                await updateDoc(doc(colRef, id), { isPaid: !bill.isPaid });
+            }
         }
 
         window.deleteBillById = async function(id) {
-            await deleteDoc(doc(db, "bills", id));
+            const colRef = getUserBillsCollection();
+            if (!colRef) return;
+            await deleteDoc(doc(colRef, id));
         }
 
         window.openModal = function(id = null) {
@@ -277,21 +291,23 @@
         }
 
         window.saveBill = async function() {
+            const colRef = getUserBillsCollection();
             const name = document.getElementById('bill-name').value.trim();
             const dueDate = document.getElementById('bill-date').value;
-            if (!name || !dueDate) return;
+            if (!colRef || !name || !dueDate) return;
 
             if (editingId) {
-                await updateDoc(doc(db, "bills", editingId), { name, dueDate });
+                await updateDoc(doc(colRef, editingId), { name, dueDate });
             } else {
-                await addDoc(collection(db, "bills"), { name, dueDate, isPaid: false });
+                await addDoc(colRef, { name, dueDate, isPaid: false });
             }
             closeModal();
         }
 
         window.deleteCurrentBill = async function() {
-            if (!editingId) return;
-            await deleteDoc(doc(db, "bills", editingId));
+            const colRef = getUserBillsCollection();
+            if (!colRef || !editingId) return;
+            await deleteDoc(doc(colRef, editingId));
             closeModal();
         }
 
