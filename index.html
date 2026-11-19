@@ -163,14 +163,7 @@
         let editingId = null;
         let unsubscribeBills = null;
 
-        // Gerar ícone automático do app
-        const canvas = document.createElement('canvas');
-        canvas.width = 180; canvas.height = 180;
-        const ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#007AFF'; ctx.fillRect(0, 0, 180, 180);
-        ctx.fillStyle = '#FFFFFF'; ctx.font = 'bold 90px -apple-system, sans-serif';
-        ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('✓', 90, 95);
-        document.getElementById('app-icon').href = canvas.toDataURL('image/png');
+
 
         if (auth) {
             onAuthStateChanged(auth, (user) => {
