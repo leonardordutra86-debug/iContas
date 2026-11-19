@@ -169,7 +169,7 @@
 
         // 🔥 COLE SUAS CREDENCIAIS DO FIREBASE ABAIXO (sem measurementId):
         const firebaseConfig = {
-             apiKey: "AIzaSyCXsXTkTOtkXHyge75SDkgfJ2VsPzAizH8",
+         apiKey: "AIzaSyCXsXTkTOtkXHyge75SDkgfJ2VsPzAizH8",
   authDomain: "icontas-53234.firebaseapp.com",
   projectId: "icontas-53234",
   storageBucket: "icontas-53234.firebasestorage.app",
@@ -212,6 +212,67 @@
         function formatBRL(value) {
             const num = Number(value) || 0;
             return num.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+        }
+
+        function formatICSDate(isoDateStr) {
+            return isoDateStr.replace(/-/g, '');
+        }
+
+        function getNextDayICS(isoDateStr) {
+            const d = parseLocalDate(isoDateStr);
+            d.setDate(d.getDate() + 1);
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return `${y}${m}${day}`;
+        }
+
+        function escapeICSText(str) {
+            return String(str || '')
+                .replace(/\\/g, '\\\\')
+                .replace(/;/g, '\\;')
+                .replace(/,/g, '\\,')
+                .replace(/\n/g, '\\n');
+        }
+
+        window.exportBillToCalendar = function(id) {
+            const bill = bills.find(b => b.id === id);
+            if (!bill || !bill.dueDate) return;
+
+            const startICS = formatICSDate(bill.dueDate);
+            const endICS = getNextDayICS(bill.dueDate);
+            const nowStamp = new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+
+            const amountLine = bill.amount != null && Number(bill.amount) > 0
+                ? `Valor: ${formatBRL(bill.amount)}`
+                : 'Lembrete de vencimento de conta';
+
+            const icsContent = [
+                'BEGIN:VCALENDAR',
+                'VERSION:2.0',
+                'PRODID:-//Contas a vencer//PWA//PT',
+                'BEGIN:VEVENT',
+                `UID:${bill.id}-${startICS}@contas-pwa`,
+                `DTSTAMP:${nowStamp}`,
+                `DTSTART;VALUE=DATE:${startICS}`,
+                `DTEND;VALUE=DATE:${endICS}`,
+                `SUMMARY:${escapeICSText(`Vencimento: ${bill.name}`)}`,
+                `DESCRIPTION:${escapeICSText(amountLine)}`,
+                'END:VEVENT',
+                'END:VCALENDAR'
+            ].join('\r\n');
+
+            const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            const safeSlug = bill.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'conta';
+            a.href = url;
+            a.download = `vencimento-${safeSlug}.ics`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(url), 1500);
+            showToast(`Evento de "${bill.name}" preparado para o Calendário.`);
         }
 
         if (auth) {
@@ -584,6 +645,11 @@
                             ${amountText}
                         </div>
                     </div>
+                    <button onclick="exportBillToCalendar('${bill.id}')" aria-label="Adicionar ao calendário" class="p-2 text-gray-400 hover:text-gray-300 active:opacity-50">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                        </svg>
+                    </button>
                     <button onclick="openModal('${bill.id}')" aria-label="Editar" class="p-2 text-gray-400 hover:text-gray-300 active:opacity-50">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
