@@ -32,11 +32,6 @@
 </head>
 <body class="bg-[#F2F2F7] dark:bg-black text-black dark:text-white min-h-screen select-none overflow-x-hidden">
 
-    <!-- ================= TELA 0: CARREGANDO ================= -->
-    <div id="splash-screen" class="fixed inset-0 z-50 bg-[#F2F2F7] dark:bg-black flex items-center justify-center">
-        <div class="text-gray-400 text-sm font-medium animate-pulse">Verificando acesso...</div>
-    </div>
-
     <!-- ================= TELA 1: LOGIN ================= -->
     <div id="login-screen" class="hidden min-h-screen flex flex-col justify-center px-6 max-w-md mx-auto">
         <div class="text-center mb-8">
@@ -69,7 +64,6 @@
 
     <!-- ================= TELA 2: APP DE CONTAS ================= -->
     <div id="app-screen" class="hidden">
-        <!-- Cabeçalho -->
         <header class="sticky top-0 z-10 bg-[#F2F2F7]/85 dark:bg-black/85 backdrop-blur-md px-4 pt-3 pb-2 border-b border-gray-200/60 dark:border-gray-800/60">
             <div class="flex justify-between items-center h-8">
                 <button onclick="handleLogout()" class="text-[#007AFF] text-[16px] active:opacity-50">
@@ -84,9 +78,7 @@
             <h1 class="text-[34px] font-bold tracking-tight leading-tight">Contas a vencer</h1>
         </header>
 
-        <!-- Conteúdo Principal -->
         <main class="px-4 py-4 max-w-lg mx-auto space-y-4 pb-24">
-            <!-- Banner de Aviso -->
             <div id="alert-banner" class="hidden rounded-xl p-3.5 flex items-center gap-3 font-semibold text-sm shadow-sm">
                 <svg class="w-5 h-5 shrink-0" fill="currentColor" viewBox="0 0 20 20">
                     <path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z"/>
@@ -94,12 +86,10 @@
                 <span id="alert-text"></span>
             </div>
 
-            <!-- Estado Vazio -->
             <div id="empty-state" class="hidden text-center py-16 text-gray-500 dark:text-gray-400">
                 <p class="text-base">Nenhuma conta ainda.<br>Toque em <strong>+</strong> para começar.</p>
             </div>
 
-            <!-- Lista de Contas -->
             <div id="bills-list" class="hidden bg-white dark:bg-[#1C1C1E] rounded-2xl overflow-hidden divide-y divide-gray-200 dark:divide-gray-800 shadow-sm"></div>
         </main>
     </div>
@@ -136,22 +126,25 @@
     <!-- Firebase SDK (Auth + Firestore) -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+        import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, browserLocalPersistence, setPersistence } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
         import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
         // 🔥 COLE SUAS CREDENCIAIS DO FIREBASE ABAIXO:
         const firebaseConfig = {
-            apiKey: "AIzaSyCXsXTkTOtkXHyge75SDkgfJ2VsPzAizH8",
-            authDomain: "icontas-53234.firebaseapp.com",
-            projectId: "icontas-53234",
-            storageBucket: "icontas-53234.firebasestorage.app",
-            messagingSenderId: "88307899128",
-            appId: "1:88307899128:web:3b136e2ac877540580790d",
-            measurementId: "G-M6J7ND5ZCL"
+            apiKey: "SUA_API_KEY",
+            authDomain: "SEU_PROJETO.firebaseapp.com",
+            projectId: "SEU_PROJECT_ID",
+            storageBucket: "SEU_PROJETO.appspot.com",
+            messagingSenderId: "SEU_MESSAGING_SENDER_ID",
+            appId: "SEU_APP_ID"
         };
 
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
+        
+        // Garante persistência local para evitar loop de autenticação
+        setPersistence(auth, browserLocalPersistence).catch((err) => console.error(err));
+
         const db = getFirestore(app);
 
         let bills = [];
@@ -167,10 +160,8 @@
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('✓', 90, 95);
         document.getElementById('app-icon').href = canvas.toDataURL('image/png');
 
-        // Monitora estado do Login
+        // Monitora estado do Login de forma estável
         onAuthStateChanged(auth, (user) => {
-            document.getElementById('splash-screen').classList.add('hidden');
-            
             if (user) {
                 document.getElementById('login-screen').classList.add('hidden');
                 document.getElementById('app-screen').classList.remove('hidden');
@@ -195,7 +186,8 @@
 
             try {
                 await signInWithEmailAndPassword(auth, email, password);
-           } catch (err) {
+            } catch (err) {
+                console.error(err);
                 errorEl.textContent = 'E-mail ou senha incorretos.';
                 errorEl.classList.remove('hidden');
             } finally {
@@ -213,10 +205,11 @@
             unsubscribeBills = onSnapshot(collection(db, "bills"), (snapshot) => {
                 bills = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 render();
+            }, (error) => {
+                console.error("Erro no Firestore:", error);
             });
         }
 
-        // Funções de Ação das Contas
         window.togglePaid = async function(id) {
             const bill = bills.find(b => b.id === id);
             if (bill) {
@@ -237,245 +230,3 @@
             const deleteBtn = document.getElementById('delete-btn');
 
             if (id) {
-                const bill = bills.find(b => b.id === id);
-                modalTitle.textContent = 'Editar conta';
-                nameInput.value = bill.name;
-                dateInput.value = bill.dueDate;
-                deleteBtn.classList.remove('hidden');
-            } else {
-                modalTitle.textContent = 'Nova conta';
-                nameInput.value = '';
-                const defaultDate = new Date();
-                defaultDate.setDate(defaultDate.getDate() + 3);
-                dateInput.value = defaultDate.toISOString().split('T')[0];
-                deleteBtn.classList.add('hidden');
-            }
-
-            validateForm();
-            const backdrop = document.getElementById('modal-backdrop');
-            const sheet = document.getElementById('bill-sheet');
-            backdrop.classList.remove('hidden');
-            sheet.classList.remove('hidden');
-            requestAnimationFrame(() => {
-                backdrop.classList.remove('opacity-0');
-                sheet.classList.add('sheet-open');
-            });
-            setTimeout(() => nameInput.focus(), 100);
-        }
-
-        window.closeModal = function() {
-            const backdrop = document.getElementById('modal-backdrop');
-            const sheet = document.getElementById('bill-sheet');
-            backdrop.classList.add('opacity-0');
-            sheet.classList.remove('sheet-open');
-            setTimeout(() => { backdrop.classList.add('hidden'); sheet.classList.add('hidden'); }, 300);
-        }
-
-        window.validateForm = function() {
-            const name = document.getElementById('bill-name').value.trim();
-            const date = document.getElementById('bill-date').value;
-            document.getElementById('save-btn').disabled = !(name.length > 0 && date);
-        }
-
-        window.saveBill = async function() {
-            const name = document.getElementById('bill-name').value.trim();
-            const dueDate = document.getElementById('bill-date').value;
-            if (!name || !dueDate) return;
-
-            if (editingId) {
-                await updateDoc(doc(db, "bills", editingId), { name, dueDate });
-            } else {
-                await addDoc(collection(db, "bills"), { name, dueDate, isPaid: false });
-            }
-            closeModal();
-        }
-
-        window.deleteCurrentBill = async function() {
-            if (!editingId) return;
-            await deleteDoc(doc(db, "bills", editingId));
-            closeModal();
-        }
-
-        // Helpers de Data
-        function getStartOfDay(dateObj) {
-            return new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate());
-        }
-
-        function parseLocalDate(isoDateStr) {
-            const [y, m, d] = isoDateStr.split('-').map(Number);
-            return new Date(y, m - 1, d);
-        }
-
-        function getDaysLeft(dueDateStr) {
-            const hoje = getStartOfDay(new Date());
-            const venc = parseLocalDate(dueDateStr);
-            return Math.round((venc - hoje) / (1000 * 60 * 60 * 24));
-        }
-
-        function getStatusInfo(bill) {
-            if (bill.isPaid) return { text: 'Paga', colorClass: 'text-green-600 dark:text-green-500' };
-            const n = getDaysLeft(bill.dueDate);
-            let text = n < -1 ? `Venceu há ${-n} dias` : n === -1 ? 'Venceu há 1 dia' : n === 0 ? 'Vence hoje' : n === 1 ? 'Vence amanhã' : `Vence em ${n} dias`;
-            let colorClass = n < 0 ? 'text-red-600 dark:text-red-500' : n <= 3 ? 'text-orange-500 dark:text-orange-400' : 'text-gray-500 dark:text-gray-400';
-            return { text, colorClass };
-        }
-
-        function formatShortDate(dueDateStr) {
-            return parseLocalDate(dueDateStr).toLocaleDateString('pt-BR', { day: 'numeric', month: 'short' }).replace('.', '');
-        }
-
-        // Lógica de Arrastar para Esquerda (Swipe to Delete estilo iOS)
-        function closeAllSwipes(exceptEl = null) {
-            document.querySelectorAll('.swipe-content').forEach(el => {
-                if (el !== exceptEl) {
-                    el.style.transform = 'translateX(0px)';
-                    el.dataset.open = 'false';
-                }
-            });
-        }
-
-        function attachSwipeGesture(container, contentEl) {
-            let startX = 0;
-            let startY = 0;
-            let currentX = 0;
-            let isSwiping = false;
-            const actionWidth = 76; // Largura do botão vermelho da lixeira
-
-            contentEl.addEventListener('touchstart', (e) => {
-                startX = e.touches[0].clientX;
-                startY = e.touches[0].clientY;
-                isSwiping = false;
-                contentEl.classList.add('swipe-dragging');
-            }, { passive: true });
-
-            contentEl.addEventListener('touchmove', (e) => {
-                const diffX = e.touches[0].clientX - startX;
-                const diffY = e.touches[0].clientY - startY;
-
-                // Ignora se o movimento for mais vertical (rolagem da lista)
-                if (!isSwiping && Math.abs(diffY) > Math.abs(diffX)) return;
-                
-                isSwiping = true;
-                closeAllSwipes(contentEl);
-
-                const isOpen = contentEl.dataset.open === 'true';
-                let translate = isOpen ? -actionWidth + diffX : diffX;
-
-                // Limita o arraste apenas para a esquerda (valores negativos)
-                if (translate > 0) translate = 0;
-                if (translate < -actionWidth - 15) translate = -actionWidth - 15;
-
-                currentX = translate;
-                contentEl.style.transform = `translateX(${translate}px)`;
-            }, { passive: true });
-
-            contentEl.addEventListener('touchend', () => {
-                contentEl.classList.remove('swipe-dragging');
-                if (!isSwiping) return;
-
-                if (currentX < -38) {
-                    contentEl.style.transform = `translateX(-${actionWidth}px)`;
-                    contentEl.dataset.open = 'true';
-                } else {
-                    contentEl.style.transform = 'translateX(0px)';
-                    contentEl.dataset.open = 'false';
-                }
-            });
-        }
-
-        // Renderização da Lista
-        function render() {
-            const listEl = document.getElementById('bills-list');
-            const emptyEl = document.getElementById('empty-state');
-            const bannerEl = document.getElementById('alert-banner');
-            const bannerTextEl = document.getElementById('alert-text');
-
-            const sorted = [...bills].sort((a, b) => {
-                if (a.isPaid !== b.isPaid) return a.isPaid ? 1 : -1;
-                return parseLocalDate(a.dueDate) - parseLocalDate(b.dueDate);
-            });
-
-            const open = bills.filter(b => !b.isPaid);
-            const late = open.filter(b => getDaysLeft(b.dueDate) < 0);
-            const soon = open.filter(b => getDaysLeft(b.dueDate) <= 3);
-
-            bannerEl.className = 'hidden rounded-xl p-3.5 flex items-center gap-3 font-semibold text-sm shadow-sm';
-            if (late.length > 0) {
-                bannerEl.classList.remove('hidden');
-                bannerEl.classList.add('bg-red-500/15', 'text-red-600', 'dark:text-red-400');
-                bannerTextEl.textContent = late.length === 1 ? `1 conta atrasada: ${late[0].name}` : `${late.length} contas atrasadas`;
-            } else if (soon.length > 0) {
-                bannerEl.classList.remove('hidden');
-                bannerEl.classList.add('bg-orange-500/15', 'text-orange-600', 'dark:text-orange-400');
-                bannerTextEl.textContent = soon.length === 1 ? `1 conta vence em breve: ${soon[0].name}` : `${soon.length} contas vencem em breve`;
-            }
-
-            if (sorted.length === 0) {
-                listEl.classList.add('hidden');
-                emptyEl.classList.remove('hidden');
-                return;
-            }
-
-            emptyEl.classList.add('hidden');
-            listEl.classList.remove('hidden');
-            listEl.innerHTML = '';
-
-            sorted.forEach(bill => {
-                const status = getStatusInfo(bill);
-                
-                // Wrapper relativo para o efeito de swipe
-                const wrapper = document.createElement('div');
-                wrapper.className = 'relative overflow-hidden bg-red-500';
-
-                // Botão vermelho da lixeira no fundo (aparece ao arrastar para esquerda)
-                const trashBtn = document.createElement('button');
-                trashBtn.className = 'absolute inset-y-0 right-0 w-[76px] bg-red-500 active:bg-red-600 text-white flex items-center justify-center';
-                trashBtn.setAttribute('aria-label', 'Excluir');
-                trashBtn.onclick = () => deleteBillById(bill.id);
-                trashBtn.innerHTML = `
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-                    </svg>
-                `;
-
-                // Camada frontal que desliza
-                const contentEl = document.createElement('div');
-                contentEl.className = 'swipe-content relative bg-white dark:bg-[#1C1C1E] flex items-center justify-between px-4 py-3.5 gap-2 z-10';
-                contentEl.dataset.open = 'false';
-                contentEl.innerHTML = `
-                    <div class="min-w-0 flex-1">
-                        <div class="font-semibold text-[17px] truncate ${bill.isPaid ? 'line-through text-gray-400 dark:text-gray-500' : ''}">
-                            ${escapeHTML(bill.name)}
-                        </div>
-                        <div class="flex items-center gap-1.5 text-[13px] mt-0.5">
-                            <span class="font-bold ${status.colorClass}">${status.text}</span>
-                            <span class="text-gray-400 dark:text-gray-500">• ${formatShortDate(bill.dueDate)}</span>
-                        </div>
-                    </div>
-                    <button onclick="openModal('${bill.id}')" aria-label="Editar" class="p-2 text-gray-400 hover:text-gray-300 active:opacity-50">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
-                        </svg>
-                    </button>
-                    <button onclick="togglePaid('${bill.id}')" 
-                        class="text-[14px] font-bold min-w-[88px] py-1.5 px-3 rounded-full border-2 transition-colors active:scale-95
-                        ${bill.isPaid ? 'bg-green-600 border-green-600 text-white' : 'border-black dark:border-white text-black dark:text-white'}">
-                        ${bill.isPaid ? '✓ Paga' : 'Não paga'}
-                    </button>
-                `;
-
-                wrapper.appendChild(trashBtn);
-                wrapper.appendChild(contentEl);
-                attachSwipeGesture(wrapper, contentEl);
-                listEl.appendChild(wrapper);
-            });
-        }
-
-        function escapeHTML(str) {
-            const div = document.createElement('div');
-            div.textContent = str;
-            return div.innerHTML;
-        }
-    </script>
-</body>
-</html>
