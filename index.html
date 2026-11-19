@@ -22,44 +22,87 @@
             -webkit-tap-highlight-color: transparent;
             padding-top: env(safe-area-inset-top);
             padding-bottom: env(safe-area-inset-bottom);
+            overscroll-behavior-x: none;
         }
         .sheet-enter { transform: translateY(100%); transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1); }
         .sheet-open { transform: translateY(0); }
+        .swipe-content { transition: transform 0.25s cubic-bezier(0.25, 1, 0.5, 1); }
+        .swipe-dragging { transition: none !important; }
     </style>
 </head>
-<body class="bg-[#F2F2F7] dark:bg-black text-black dark:text-white min-h-screen select-none">
+<body class="bg-[#F2F2F7] dark:bg-black text-black dark:text-white min-h-screen select-none overflow-x-hidden">
 
-    <!-- Cabeçalho -->
-    <header class="sticky top-0 z-10 bg-[#F2F2F7]/85 dark:bg-black/85 backdrop-blur-md px-4 pt-3 pb-2 border-b border-gray-200/60 dark:border-gray-800/60">
-        <div class="flex justify-end items-center h-8">
-            <button onclick="openModal()" aria-label="Nova conta" class="text-[#007AFF] active:opacity-50 p-1">
-                <svg class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/>
-                </svg>
+    <!-- ================= TELA 0: CARREGANDO ================= -->
+    <div id="splash-screen" class="fixed inset-0 z-50 bg-[#F2F2F7] dark:bg-black flex items-center justify-center">
+        <div class="text-gray-400 text-sm font-medium animate-pulse">Verificando acesso...</div>
+    </div>
+
+    <!-- ================= TELA 1: LOGIN ================= -->
+    <div id="login-screen" class="hidden min-h-screen flex flex-col justify-center px-6 max-w-md mx-auto">
+        <div class="text-center mb-8">
+            <div class="w-16 h-16 bg-[#007AFF] text-white rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-md text-3xl font-bold">
+                ✓
+            </div>
+            <h1 class="text-2xl font-bold tracking-tight">Contas a vencer</h1>
+            <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Faça login para acessar suas contas</p>
+        </div>
+
+        <form onsubmit="handleLogin(event)" class="space-y-4">
+            <div class="bg-white dark:bg-[#1C1C1E] rounded-2xl overflow-hidden divide-y divide-gray-200 dark:divide-gray-800 shadow-sm">
+                <div class="px-4 py-3.5">
+                    <input type="email" id="login-email" required placeholder="E-mail" autocomplete="email"
+                        class="w-full bg-transparent text-base outline-none placeholder-gray-400">
+                </div>
+                <div class="px-4 py-3.5">
+                    <input type="password" id="login-password" required placeholder="Senha" autocomplete="current-password"
+                        class="w-full bg-transparent text-base outline-none placeholder-gray-400">
+                </div>
+            </div>
+
+            <p id="login-error" class="hidden text-red-500 text-sm text-center font-medium"></p>
+
+            <button type="submit" id="login-btn" class="w-full bg-[#007AFF] active:opacity-80 text-white font-semibold py-3.5 rounded-2xl shadow-sm transition">
+                Entrar
             </button>
-        </div>
-        <h1 class="text-[34px] font-bold tracking-tight leading-tight">Contas a vencer</h1>
-    </header>
+        </form>
+    </div>
 
-    <!-- Conteúdo Principal -->
-    <main class="px-4 py-4 max-w-lg mx-auto space-y-4 pb-24">
-        <!-- Banner de Aviso -->
-        <div id="alert-banner" class="hidden rounded-xl p-3.5 flex items-center gap-3 font-semibold text-sm shadow-sm">
-            <svg class="w-5 h-5 shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                <path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z"/>
-            </svg>
-            <span id="alert-text"></span>
-        </div>
+    <!-- ================= TELA 2: APP DE CONTAS ================= -->
+    <div id="app-screen" class="hidden">
+        <!-- Cabeçalho -->
+        <header class="sticky top-0 z-10 bg-[#F2F2F7]/85 dark:bg-black/85 backdrop-blur-md px-4 pt-3 pb-2 border-b border-gray-200/60 dark:border-gray-800/60">
+            <div class="flex justify-between items-center h-8">
+                <button onclick="handleLogout()" class="text-[#007AFF] text-[16px] active:opacity-50">
+                    Sair
+                </button>
+                <button onclick="openModal()" aria-label="Nova conta" class="text-[#007AFF] active:opacity-50 p-1">
+                    <svg class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/>
+                    </svg>
+                </button>
+            </div>
+            <h1 class="text-[34px] font-bold tracking-tight leading-tight">Contas a vencer</h1>
+        </header>
 
-        <!-- Indicador de Carregamento / Vazio -->
-        <div id="loading-state" class="text-center py-16 text-gray-400">Carregando contas da nuvem...</div>
-        <div id="empty-state" class="hidden text-center py-16 text-gray-500 dark:text-gray-400">
-            <p class="text-base">Nenhuma conta ainda.<br>Toque em <strong>+</strong> para começar.</p>
-        </div>
+        <!-- Conteúdo Principal -->
+        <main class="px-4 py-4 max-w-lg mx-auto space-y-4 pb-24">
+            <!-- Banner de Aviso -->
+            <div id="alert-banner" class="hidden rounded-xl p-3.5 flex items-center gap-3 font-semibold text-sm shadow-sm">
+                <svg class="w-5 h-5 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                    <path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z"/>
+                </svg>
+                <span id="alert-text"></span>
+            </div>
 
-        <!-- Lista -->
-        <div id="bills-list" class="hidden bg-white dark:bg-[#1C1C1E] rounded-2xl overflow-hidden divide-y divide-gray-200 dark:divide-gray-800 shadow-sm"></div>
-    </main>
+            <!-- Estado Vazio -->
+            <div id="empty-state" class="hidden text-center py-16 text-gray-500 dark:text-gray-400">
+                <p class="text-base">Nenhuma conta ainda.<br>Toque em <strong>+</strong> para começar.</p>
+            </div>
+
+            <!-- Lista de Contas -->
+            <div id="bills-list" class="hidden bg-white dark:bg-[#1C1C1E] rounded-2xl overflow-hidden divide-y divide-gray-200 dark:divide-gray-800 shadow-sm"></div>
+        </main>
+    </div>
 
     <!-- Modal / Sheet -->
     <div id="modal-backdrop" onclick="closeModal()" class="fixed inset-0 bg-black/40 z-40 hidden opacity-0 transition-opacity duration-300"></div>
@@ -90,26 +133,29 @@
         </div>
     </div>
 
-    <!-- Firebase SDK (Modular) -->
+    <!-- Firebase SDK (Auth + Firestore) -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
         import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
         // 🔥 COLE SUAS CREDENCIAIS DO FIREBASE ABAIXO:
         const firebaseConfig = {
-            apiKey: "AIzaSyCXsXTkTOtkXHyge75SDkgfJ2VsPzAizH8",
+            apiKey: "AIzaSyCXsXTkTOtkXHyge75SDkgfJ2VsPzAizH",
             authDomain: "icontas-53234.firebaseapp.com",
             projectId: "icontas-53234",
-            storageBucket: "icontas-53234.firebasestorage.app",
-            messagingSenderId: "S88307899128",
+            storageBucket: "Sicontas-53234.firebasestorage.app",
+            messagingSenderId: "88307899128",
             appId: "1:88307899128:web:3b136e2ac877540580790d"
         };
 
         const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
         const db = getFirestore(app);
 
         let bills = [];
         let editingId = null;
+        let unsubscribeBills = null;
 
         // Gerar ícone automático do app
         const canvas = document.createElement('canvas');
@@ -120,17 +166,56 @@
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('✓', 90, 95);
         document.getElementById('app-icon').href = canvas.toDataURL('image/png');
 
-        // Escutar alterações em tempo real no Firestore
-        onSnapshot(collection(db, "bills"), (snapshot) => {
-            bills = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            document.getElementById('loading-state').classList.add('hidden');
-            render();
-        }, (error) => {
-            console.error("Erro ao carregar dados:", error);
-            document.getElementById('loading-state').textContent = "Erro ao conectar com a nuvem. Verifique as credenciais.";
+        // Monitora estado do Login
+        onAuthStateChanged(auth, (user) => {
+            document.getElementById('splash-screen').classList.add('hidden');
+            
+            if (user) {
+                document.getElementById('login-screen').classList.add('hidden');
+                document.getElementById('app-screen').classList.remove('hidden');
+                startListeningBills();
+            } else {
+                if (unsubscribeBills) { unsubscribeBills(); unsubscribeBills = null; }
+                document.getElementById('app-screen').classList.add('hidden');
+                document.getElementById('login-screen').classList.remove('hidden');
+            }
         });
 
-        // Funções Globais expostas para o HTML
+        window.handleLogin = async function(e) {
+            e.preventDefault();
+            const email = document.getElementById('login-email').value.trim();
+            const password = document.getElementById('login-password').value;
+            const errorEl = document.getElementById('login-error');
+            const btn = document.getElementById('login-btn');
+
+            errorEl.classList.add('hidden');
+            btn.disabled = true;
+            btn.textContent = 'Entrando...';
+
+            try {
+                await signInWithEmailAndPassword(auth, email, password);
+            } catch (err) {
+                errorEl.textContent = 'E-mail ou senha incorretos.';
+                errorEl.classList.remove('hidden');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Entrar';
+            }
+        }
+
+        window.handleLogout = async function() {
+            await signOut(auth);
+        }
+
+        function startListeningBills() {
+            if (unsubscribeBills) return;
+            unsubscribeBills = onSnapshot(collection(db, "bills"), (snapshot) => {
+                bills = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                render();
+            });
+        }
+
+        // Funções de Ação das Contas
         window.togglePaid = async function(id) {
             const bill = bills.find(b => b.id === id);
             if (bill) {
@@ -138,7 +223,12 @@
             }
         }
 
+        window.deleteBillById = async function(id) {
+            await deleteDoc(doc(db, "bills", id));
+        }
+
         window.openModal = function(id = null) {
+            closeAllSwipes();
             editingId = id;
             const modalTitle = document.getElementById('modal-title');
             const nameInput = document.getElementById('bill-name');
@@ -205,6 +295,7 @@
             closeModal();
         }
 
+        // Helpers de Data
         function getStartOfDay(dateObj) {
             return new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate());
         }
@@ -232,6 +323,66 @@
             return parseLocalDate(dueDateStr).toLocaleDateString('pt-BR', { day: 'numeric', month: 'short' }).replace('.', '');
         }
 
+        // Lógica de Arrastar para Esquerda (Swipe to Delete estilo iOS)
+        function closeAllSwipes(exceptEl = null) {
+            document.querySelectorAll('.swipe-content').forEach(el => {
+                if (el !== exceptEl) {
+                    el.style.transform = 'translateX(0px)';
+                    el.dataset.open = 'false';
+                }
+            });
+        }
+
+        function attachSwipeGesture(container, contentEl) {
+            let startX = 0;
+            let startY = 0;
+            let currentX = 0;
+            let isSwiping = false;
+            const actionWidth = 76; // Largura do botão vermelho da lixeira
+
+            contentEl.addEventListener('touchstart', (e) => {
+                startX = e.touches[0].clientX;
+                startY = e.touches[0].clientY;
+                isSwiping = false;
+                contentEl.classList.add('swipe-dragging');
+            }, { passive: true });
+
+            contentEl.addEventListener('touchmove', (e) => {
+                const diffX = e.touches[0].clientX - startX;
+                const diffY = e.touches[0].clientY - startY;
+
+                // Ignora se o movimento for mais vertical (rolagem da lista)
+                if (!isSwiping && Math.abs(diffY) > Math.abs(diffX)) return;
+                
+                isSwiping = true;
+                closeAllSwipes(contentEl);
+
+                const isOpen = contentEl.dataset.open === 'true';
+                let translate = isOpen ? -actionWidth + diffX : diffX;
+
+                // Limita o arraste apenas para a esquerda (valores negativos)
+                if (translate > 0) translate = 0;
+                if (translate < -actionWidth - 15) translate = -actionWidth - 15;
+
+                currentX = translate;
+                contentEl.style.transform = `translateX(${translate}px)`;
+            }, { passive: true });
+
+            contentEl.addEventListener('touchend', () => {
+                contentEl.classList.remove('swipe-dragging');
+                if (!isSwiping) return;
+
+                if (currentX < -38) {
+                    contentEl.style.transform = `translateX(-${actionWidth}px)`;
+                    contentEl.dataset.open = 'true';
+                } else {
+                    contentEl.style.transform = 'translateX(0px)';
+                    contentEl.dataset.open = 'false';
+                }
+            });
+        }
+
+        // Renderização da Lista
         function render() {
             const listEl = document.getElementById('bills-list');
             const emptyEl = document.getElementById('empty-state');
@@ -270,9 +421,27 @@
 
             sorted.forEach(bill => {
                 const status = getStatusInfo(bill);
-                const row = document.createElement('div');
-                row.className = 'flex items-center justify-between px-4 py-3.5 gap-2';
-                row.innerHTML = `
+                
+                // Wrapper relativo para o efeito de swipe
+                const wrapper = document.createElement('div');
+                wrapper.className = 'relative overflow-hidden bg-red-500';
+
+                // Botão vermelho da lixeira no fundo (aparece ao arrastar para esquerda)
+                const trashBtn = document.createElement('button');
+                trashBtn.className = 'absolute inset-y-0 right-0 w-[76px] bg-red-500 active:bg-red-600 text-white flex items-center justify-center';
+                trashBtn.setAttribute('aria-label', 'Excluir');
+                trashBtn.onclick = () => deleteBillById(bill.id);
+                trashBtn.innerHTML = `
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                    </svg>
+                `;
+
+                // Camada frontal que desliza
+                const contentEl = document.createElement('div');
+                contentEl.className = 'swipe-content relative bg-white dark:bg-[#1C1C1E] flex items-center justify-between px-4 py-3.5 gap-2 z-10';
+                contentEl.dataset.open = 'false';
+                contentEl.innerHTML = `
                     <div class="min-w-0 flex-1">
                         <div class="font-semibold text-[17px] truncate ${bill.isPaid ? 'line-through text-gray-400 dark:text-gray-500' : ''}">
                             ${escapeHTML(bill.name)}
@@ -293,7 +462,11 @@
                         ${bill.isPaid ? '✓ Paga' : 'Não paga'}
                     </button>
                 `;
-                listEl.appendChild(row);
+
+                wrapper.appendChild(trashBtn);
+                wrapper.appendChild(contentEl);
+                attachSwipeGesture(wrapper, contentEl);
+                listEl.appendChild(wrapper);
             });
         }
 
