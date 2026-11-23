@@ -155,10 +155,27 @@
     </div>
 
     <script>
+<script>
+        window._pendingLoginEvent = null;
+        window.handleLogin = function(e) {
+            if (e && e.preventDefault) e.preventDefault();
+            window._pendingLoginEvent = {
+                email: document.getElementById('login-email')?.value || '',
+                password: document.getElementById('login-password')?.value || ''
+            };
+            const errorEl = document.getElementById('login-error');
+            if (errorEl) {
+                errorEl.textContent = 'Carregando autenticação... tente novamente em 1 segundo.';
+                errorEl.classList.remove('hidden');
+            }
+        };
+
         window.onerror = function(msg) {
             const box = document.getElementById('fatal-error');
             box.textContent = 'Erro no código: ' + msg;
             box.classList.remove('hidden');
+        };
+    </script>
         };
     </script>
 
@@ -167,6 +184,12 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
         import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+        if (window._pendingLoginEvent && window._pendingLoginEvent.email) {
+            document.getElementById('login-email').value = window._pendingLoginEvent.email;
+            document.getElementById('login-password').value = window._pendingLoginEvent.password;
+            window._pendingLoginEvent = null;
+        }
 
         // 🔥 COLE SUAS CREDENCIAIS DO FIREBASE ABAIXO (sem measurementId):
         const firebaseConfig = {
