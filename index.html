@@ -28,6 +28,45 @@
         .swipe-content { transition: transform 0.25s cubic-bezier(0.25, 1, 0.5, 1); }
         .swipe-dragging { transition: none !important; }
     </style>
+
+    <!-- Garante handleLogin disponível desde o primeiro instante -->
+    <script>
+        window._authReady = false;
+        window._queuedLogin = null;
+
+        window.handleLogin = function(e) {
+            if (e && e.preventDefault) e.preventDefault();
+            const emailEl = document.getElementById('login-email');
+            const passEl = document.getElementById('login-password');
+            const errorEl = document.getElementById('login-error');
+            const btn = document.getElementById('login-btn');
+
+            const email = emailEl ? emailEl.value.trim() : '';
+            const password = passEl ? passEl.value : '';
+
+            if (!window._authReady) {
+                window._queuedLogin = { email, password };
+                if (errorEl) {
+                    errorEl.textContent = 'Iniciando Firebase... aguarde 1 segundo e tente novamente.';
+                    errorEl.classList.remove('hidden');
+                }
+                if (btn) btn.disabled = false;
+                return;
+            }
+
+            if (typeof window._performFirebaseLogin === 'function') {
+                window._performFirebaseLogin(email, password);
+            }
+        };
+
+        window.onerror = function(msg) {
+            const box = document.getElementById('fatal-error');
+            if (box) {
+                box.textContent = 'Erro no código: ' + msg;
+                box.classList.remove('hidden');
+            }
+        };
+    </script>
 </head>
 <body class="bg-[#F2F2F7] dark:bg-black text-black dark:text-white min-h-screen select-none overflow-x-hidden">
 
@@ -175,14 +214,6 @@
         </div>
     </div>
 
-    <script>
-        window.onerror = function(msg) {
-            const box = document.getElementById('fatal-error');
-            box.textContent = 'Erro no código: ' + msg;
-            box.classList.remove('hidden');
-        };
-    </script>
-
     <!-- Firebase SDK Compat (Auth + Firestore) -->
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
@@ -217,7 +248,7 @@
         let bills = [];
         let editingId = null;
         let unsubscribeBills = null;
-        let currentPage = 'current'; // 'current' | 'history'
+        let currentPage = 'current';
 
         function getUserBillsCollection() {
             if (!db || !currentUser) return null;
@@ -369,7 +400,48 @@
             return d.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
         }
 
+        window._performFirebaseLogin = async function(email, password) {
+            const errorEl = document.getElementById('login-error');
+            const btn = document.getElementById('login-btn');
+
+            if (!auth) {
+                if (errorEl) {
+                    errorEl.textContent = 'Firebase não inicializado.';
+                    errorEl.classList.remove('hidden');
+                }
+                return;
+            }
+
+            if (errorEl) errorEl.classList.add('hidden');
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = 'Entrando...';
+            }
+
+            try {
+                await auth.signInWithEmailAndPassword(email, password);
+            } catch (err) {
+                if (errorEl) {
+                    errorEl.textContent = `Falha no login (${err.code || 'erro'})`;
+                    errorEl.classList.remove('hidden');
+                }
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = 'Entrar';
+                }
+            }
+        };
+
         if (auth) {
+            window._authReady = true;
+
+            if (window._queuedLogin && window._queuedLogin.email && window._queuedLogin.password) {
+                const { email, password } = window._queuedLogin;
+                window._queuedLogin = null;
+                window._performFirebaseLogin(email, password);
+            }
+
             auth.onAuthStateChanged((user) => {
                 currentUser = user;
                 if (user) {
@@ -385,34 +457,6 @@
                     document.getElementById('login-screen').classList.remove('hidden');
                 }
             });
-        }
-
-        async function handleLogin(e) {
-            e.preventDefault();
-            if (!auth) {
-                const errorEl = document.getElementById('login-error');
-                errorEl.textContent = 'Firebase não inicializado.';
-                errorEl.classList.remove('hidden');
-                return;
-            }
-            const email = document.getElementById('login-email').value.trim();
-            const password = document.getElementById('login-password').value;
-            const errorEl = document.getElementById('login-error');
-            const btn = document.getElementById('login-btn');
-
-            errorEl.classList.add('hidden');
-            btn.disabled = true;
-            btn.textContent = 'Entrando...';
-
-            try {
-                await auth.signInWithEmailAndPassword(email, password);
-            } catch (err) {
-                errorEl.textContent = `Falha no login (${err.code || 'erro'})`;
-                errorEl.classList.remove('hidden');
-            } finally {
-                btn.disabled = false;
-                btn.textContent = 'Entrar';
-            }
         }
 
         async function handleLogout() {
@@ -844,4 +888,34 @@
                         .filter(b => getMonthKeyFromDateStr(b.dueDate) === mKey)
                         .sort(byDueDate);
 
-                    if (monthItems.length ===
+                    if (monthItems.length === 0) return;
+
+                    const section = document.createElement('section');
+                    section.className = 'space-y-1.5';
+
+                    const heading = document.createElement('h2');
+                    heading.className = 'px-1 text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400';
+                    heading.textContent = `${formatMonthLabel(mKey)} (${monthItems.length})`;
+
+                    const card = document.createElement('div');
+                    card.className = 'bg-white dark:bg-[#1C1C1E] rounded-2xl overflow-hidden divide-y divide-gray-200 dark:divide-gray-800 shadow-sm';
+
+                    monthItems.forEach(bill => {
+                        card.appendChild(buildBillRow(bill));
+                    });
+
+                    section.appendChild(heading);
+                    section.appendChild(card);
+                    groupedEl.appendChild(section);
+                });
+            }
+        }
+
+        function escapeHTML(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>
