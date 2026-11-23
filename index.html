@@ -64,7 +64,7 @@
 
     <!-- ================= TELA 2: APP DE CONTAS ================= -->
     <div id="app-screen" class="hidden">
-        <header class="sticky top-0 z-10 bg-[#F2F2F7]/85 dark:bg-black/85 backdrop-blur-md px-4 pt-3 pb-2.5 border-b border-gray-200/60 dark:border-gray-800/60">
+        <header class="sticky top-0 z-30 bg-[#F2F2F7] dark:bg-black px-4 pt-3 pb-2.5 border-b border-gray-200 dark:border-gray-800 shadow-sm">
             <div class="flex justify-between items-center h-8">
                 <button type="button" onclick="handleLogout()" class="text-[#007AFF] text-[16px] active:opacity-50">
                     Sair
@@ -74,7 +74,7 @@
             <h1 id="page-title" class="text-[34px] font-bold tracking-tight leading-tight">Contas a vencer</h1>
 
             <!-- Seletor de Página: Histórico (esquerda) x Mês atual (direita) -->
-            <div class="mt-3 grid grid-cols-2 bg-gray-200/80 dark:bg-[#1C1C1E] p-1 rounded-xl">
+            <div class="mt-3 grid grid-cols-2 bg-gray-200 dark:bg-[#1C1C1E] p-1 rounded-xl">
                 <button type="button" id="tab-history" onclick="switchPage('history')"
                     class="py-1.5 text-sm font-semibold rounded-lg text-gray-600 dark:text-gray-400 transition">
                     Histórico
@@ -86,7 +86,7 @@
             </div>
         </header>
 
-        <main class="px-4 py-4 max-w-lg mx-auto space-y-5 pb-32">
+        <main class="relative z-0 px-4 py-4 max-w-lg mx-auto space-y-5 pb-32">
             <!-- Resumo simples de valores -->
             <div id="totals-card" class="hidden grid grid-cols-2 gap-3">
                 <div class="bg-white dark:bg-[#1C1C1E] rounded-2xl p-3.5 shadow-sm">
@@ -299,7 +299,6 @@
             const safeSlug = bill.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'conta';
             const fileName = `vencimento-${safeSlug}.ics`;
 
-            // Tenta abrir via data URI para facilitar a abertura direta no Calendário do iOS
             const dataUri = 'data:text/calendar;charset=utf-8,' + encodeURIComponent(icsContent);
             const link = document.createElement('a');
             link.href = dataUri;
@@ -684,7 +683,7 @@
                 : '';
 
             const contentEl = document.createElement('div');
-            contentEl.className = 'swipe-content relative bg-white dark:bg-[#1C1C1E] flex items-center justify-between px-4 py-3.5 gap-2 z-10';
+            contentEl.className = 'swipe-content relative bg-white dark:bg-[#1C1C1E] flex items-center justify-between px-4 py-3.5 gap-2';
             contentEl.dataset.open = 'false';
             contentEl.innerHTML = `
                 <div class="min-w-0 flex-1">
@@ -738,7 +737,6 @@
 
             const byDueDate = (a, b) => parseLocalDate(a.dueDate) - parseLocalDate(b.dueDate);
 
-            // Na virada do mês: contas do mês atual OU recorrentes não pagas de meses anteriores
             const currentBills = bills.filter(b => {
                 if (!b.dueDate) return false;
                 const mKey = getMonthKeyFromDateStr(b.dueDate);
@@ -747,7 +745,6 @@
                 return false;
             });
 
-            // Histórico limitado estritamente aos 2 meses anteriores
             const historyBills = bills.filter(b => {
                 if (!b.dueDate) return false;
                 const mKey = getMonthKeyFromDateStr(b.dueDate);
@@ -847,34 +844,4 @@
                         .filter(b => getMonthKeyFromDateStr(b.dueDate) === mKey)
                         .sort(byDueDate);
 
-                    if (monthItems.length === 0) return;
-
-                    const section = document.createElement('section');
-                    section.className = 'space-y-1.5';
-
-                    const heading = document.createElement('h2');
-                    heading.className = 'px-1 text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400';
-                    heading.textContent = `${formatMonthLabel(mKey)} (${monthItems.length})`;
-
-                    const card = document.createElement('div');
-                    card.className = 'bg-white dark:bg-[#1C1C1E] rounded-2xl overflow-hidden divide-y divide-gray-200 dark:divide-gray-800 shadow-sm';
-
-                    monthItems.forEach(bill => {
-                        card.appendChild(buildBillRow(bill));
-                    });
-
-                    section.appendChild(heading);
-                    section.appendChild(card);
-                    groupedEl.appendChild(section);
-                });
-            }
-        }
-
-        function escapeHTML(str) {
-            const div = document.createElement('div');
-            div.textContent = str;
-            return div.innerHTML;
-        }
-    </script>
-</body>
-</html>
+                    if (monthItems.length ===
