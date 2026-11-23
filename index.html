@@ -137,7 +137,7 @@
             <button type="button" id="save-btn" onclick="saveBill()" class="text-[#007AFF] font-semibold text-base disabled:opacity-30 active:opacity-50" disabled>Salvar</button>
         </div>
 
-        <div class="p-4 space-y-4">
+        <div class="p-4 space-y-3">
             <div class="bg-white dark:bg-[#2C2C2E] rounded-xl overflow-hidden divide-y divide-gray-200 dark:divide-gray-700">
                 <div class="px-4 py-3">
                     <input type="text" id="bill-name" placeholder="Nome da conta (ex: Luz, Internet)" oninput="validateForm()"
@@ -165,7 +165,11 @@
                 </label>
             </div>
 
-            <button type="button" id="delete-btn" onclick="deleteCurrentBill()" class="hidden w-full bg-white dark:bg-[#2C2C2E] text-red-500 font-medium py-3 rounded-xl active:bg-gray-100">
+            <button type="button" id="modal-calendar-btn" onclick="exportEditingBillToCalendar()" class="hidden w-full bg-white dark:bg-[#2C2C2E] text-[#007AFF] font-semibold py-3 rounded-xl active:bg-gray-100 dark:active:bg-gray-700">
+                Adicionar vencimento ao Calendário
+            </button>
+
+            <button type="button" id="delete-btn" onclick="deleteCurrentBill()" class="hidden w-full bg-white dark:bg-[#2C2C2E] text-red-500 font-medium py-3 rounded-xl active:bg-gray-100 dark:active:bg-gray-700">
                 Excluir conta
             </button>
         </div>
@@ -257,10 +261,7 @@
                 .replace(/\n/g, '\\n');
         }
 
-        function exportBillToCalendar(id) {
-            const bill = bills.find(b => b.id === id);
-            if (!bill || !bill.dueDate) return;
-
+        function buildICSContentForBill(bill) {
             const startICS = formatICSDate(bill.dueDate);
             const endICS = getNextDayICS(bill.dueDate);
             const nowStamp = new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
@@ -269,32 +270,67 @@
                 ? `Valor: ${formatBRL(bill.amount)}`
                 : 'Lembrete de vencimento de conta';
 
-            const icsContent = [
+            return [
                 'BEGIN:VCALENDAR',
                 'VERSION:2.0',
                 'PRODID:-//Contas a vencer//PWA//PT',
+                'CALSCALE:GREGORIAN',
+                'METHOD:PUBLISH',
                 'BEGIN:VEVENT',
-                `UID:${bill.id}-${startICS}@contas-pwa`,
+                `UID:${bill.id || Date.now()}-${startICS}@contas-pwa`,
                 `DTSTAMP:${nowStamp}`,
                 `DTSTART;VALUE=DATE:${startICS}`,
                 `DTEND;VALUE=DATE:${endICS}`,
                 `SUMMARY:${escapeICSText(`Vencimento: ${bill.name}`)}`,
                 `DESCRIPTION:${escapeICSText(amountLine)}`,
+                'BEGIN:VALARM',
+                'ACTION:DISPLAY',
+                `DESCRIPTION:${escapeICSText(`Vencimento hoje: ${bill.name}`)}`,
+                'TRIGGER:PT9H',
+                'END:VALARM',
                 'END:VEVENT',
                 'END:VCALENDAR'
             ].join('\r\n');
+        }
 
-            const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
+        function triggerCalendarOpen(bill) {
+            if (!bill || !bill.name || !bill.dueDate) return;
+            const icsContent = buildICSContentForBill(bill);
             const safeSlug = bill.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'conta';
-            a.href = url;
-            a.download = `vencimento-${safeSlug}.ics`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            setTimeout(() => URL.revokeObjectURL(url), 1500);
-            showToast(`Evento de "${bill.name}" preparado para o Calendário.`);
+            const fileName = `vencimento-${safeSlug}.ics`;
+
+            // Tenta abrir via data URI para facilitar a abertura direta no Calendário do iOS
+            const dataUri = 'data:text/calendar;charset=utf-8,' + encodeURIComponent(icsContent);
+            const link = document.createElement('a');
+            link.href = dataUri;
+            link.download = fileName;
+            link.rel = 'noopener';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            showToast(`Evento de "${bill.name}" enviado para o Calendário.`);
+        }
+
+        function exportBillToCalendar(id) {
+            const bill = bills.find(b => b.id === id);
+            if (!bill || !bill.dueDate) return;
+            triggerCalendarOpen(bill);
+        }
+
+        function exportEditingBillToCalendar() {
+            const name = document.getElementById('bill-name').value.trim();
+            const rawAmount = document.getElementById('bill-amount').value;
+            const amount = rawAmount !== '' ? Number(rawAmount) : null;
+            const dueDate = document.getElementById('bill-date').value;
+            if (!name || !dueDate) return;
+
+            triggerCalendarOpen({
+                id: editingId || String(Date.now()),
+                name,
+                amount,
+                dueDate
+            });
         }
 
         function switchPage(page) {
@@ -317,7 +353,7 @@
 
         function getMonthKeyFromDateStr(isoDateStr) {
             const [y, m] = isoDateStr.split('-');
-            return `${y}-${m}`; // ex: "2026-11"
+            return `${y}-${m}`;
         }
 
         function getOffsetMonthKey(monthOffset) {
@@ -458,6 +494,7 @@
             const amountInput = document.getElementById('bill-amount');
             const dateInput = document.getElementById('bill-date');
             const recurringInput = document.getElementById('bill-recurring');
+            const calendarBtn = document.getElementById('modal-calendar-btn');
             const deleteBtn = document.getElementById('delete-btn');
 
             if (id) {
@@ -467,6 +504,7 @@
                 amountInput.value = bill.amount != null ? bill.amount : '';
                 dateInput.value = bill.dueDate;
                 recurringInput.checked = Boolean(bill.isRecurring);
+                calendarBtn.classList.remove('hidden');
                 deleteBtn.classList.remove('hidden');
             } else {
                 modalTitle.textContent = 'Nova conta';
@@ -476,6 +514,7 @@
                 defaultDate.setDate(defaultDate.getDate() + 3);
                 dateInput.value = defaultDate.toISOString().split('T')[0];
                 recurringInput.checked = false;
+                calendarBtn.classList.add('hidden');
                 deleteBtn.classList.add('hidden');
             }
 
@@ -793,7 +832,6 @@
                     groupedEl.appendChild(section);
                 });
             } else {
-                // Página de Histórico (somente os 2 meses anteriores)
                 if (historyBills.length === 0) {
                     groupedEl.classList.add('hidden');
                     emptyTextEl.innerHTML = 'Nenhuma conta no histórico dos últimos 2 meses.';
