@@ -387,11 +387,11 @@
             return num.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
         }
 
-        function formatICSDate(isoDateStr) {
+        function formatCalDate(isoDateStr) {
             return isoDateStr.replace(/-/g, '');
         }
 
-        function getNextDayICS(isoDateStr) {
+        function getNextDayCalDate(isoDateStr) {
             const d = parseLocalDate(isoDateStr);
             d.setDate(d.getDate() + 1);
             const y = d.getFullYear();
@@ -400,87 +400,29 @@
             return `${y}${m}${day}`;
         }
 
-        function escapeICSText(str) {
-            return String(str || '')
-                .replace(/\\/g, '\\\\')
-                .replace(/;/g, '\\;')
-                .replace(/,/g, '\\,')
-                .replace(/\n/g, '\\n');
-        }
-
-        function buildICSContentForBill(bill) {
-            const startICS = formatICSDate(bill.dueDate);
-            const endICS = getNextDayICS(bill.dueDate);
-            const nowStamp = new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
-
-            const amountLine = bill.amount != null && Number(bill.amount) > 0
+        function buildGoogleCalendarURL(bill) {
+            const startDate = formatCalDate(bill.dueDate);
+            const endDate = getNextDayCalDate(bill.dueDate);
+            const title = `Vencimento: ${bill.name}`;
+            const details = bill.amount != null && Number(bill.amount) > 0
                 ? `Valor: ${formatBRL(bill.amount)}`
                 : 'Lembrete de vencimento de conta';
 
-            return [
-                'BEGIN:VCALENDAR',
-                'VERSION:2.0',
-                'PRODID:-//Contas a vencer//PWA//PT',
-                'CALSCALE:GREGORIAN',
-                'METHOD:PUBLISH',
-                'BEGIN:VEVENT',
-                `UID:${bill.id || Date.now()}-${startICS}@contas-pwa`,
-                `DTSTAMP:${nowStamp}`,
-                `DTSTART;VALUE=DATE:${startICS}`,
-                `DTEND;VALUE=DATE:${endICS}`,
-                `SUMMARY:${escapeICSText(`Vencimento: ${bill.name}`)}`,
-                `DESCRIPTION:${escapeICSText(amountLine)}`,
-                'BEGIN:VALARM',
-                'ACTION:DISPLAY',
-                `DESCRIPTION:${escapeICSText(`Vencimento hoje: ${bill.name}`)}`,
-                'TRIGGER:PT9H',
-                'END:VALARM',
-                'END:VEVENT',
-                'END:VCALENDAR'
-            ].join('\r\n');
+            const params = new URLSearchParams({
+                action: 'TEMPLATE',
+                text: title,
+                dates: `${startDate}/${endDate}`,
+                details
+            });
+
+            return `https://calendar.google.com/calendar/render?${params.toString()}`;
         }
 
-        function downloadICSBlob(icsContent, fileName) {
-            const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = fileName;
-            link.style.display = 'none';
-            document.body.appendChild(link);
-            link.click();
-            setTimeout(() => {
-                document.body.removeChild(link);
-                URL.revokeObjectURL(url);
-            }, 1000);
-        }
-
-        async function triggerCalendarOpen(bill) {
+        function triggerCalendarOpen(bill) {
             if (!bill || !bill.name || !bill.dueDate) return;
-            const icsContent = buildICSContentForBill(bill);
-            const safeSlug = bill.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'conta';
-            const fileName = `vencimento-${safeSlug}.ics`;
-
-            const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-            const file = typeof File !== 'undefined'
-                ? new File([icsContent], fileName, { type: 'text/calendar;charset=utf-8' })
-                : null;
-
-            if (isTouchDevice && file && navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-                try {
-                    await navigator.share({
-                        title: `Vencimento: ${bill.name}`,
-                        files: [file]
-                    });
-                    showToast(`Compartilhamento de "${bill.name}" aberto.`);
-                    return;
-                } catch (err) {
-                    if (err && err.name === 'AbortError') return;
-                }
-            }
-
-            downloadICSBlob(icsContent, fileName);
-            showToast(`Arquivo .ics de "${bill.name}" gerado para o Calendário.`);
+            const url = buildGoogleCalendarURL(bill);
+            window.open(url, '_blank', 'noopener,noreferrer');
+            showToast(`Evento de "${bill.name}" aberto no Calendário.`);
         }
 
         function exportBillToCalendar(id) {
@@ -735,7 +677,7 @@
             closeModal();
 
             if (isNewBill) {
-                await triggerCalendarOpen({ id: savedId, name, amount, dueDate });
+                triggerCalendarOpen({ id: savedId, name, amount, dueDate });
             }
         }
 
