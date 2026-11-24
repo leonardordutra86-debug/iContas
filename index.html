@@ -39,6 +39,8 @@
             appId: "1:88307899128:web:3b136e2ac877540580790d"
         };
 
+        window._authMode = 'login'; // 'login' | 'signup'
+
         window.onerror = function(msg) {
             const box = document.getElementById('fatal-error');
             if (box) {
@@ -47,46 +49,133 @@
             }
         };
 
-        window.handleLogin = async function(e) {
+        window.toggleAuthMode = function() {
+            window._authMode = window._authMode === 'login' ? 'signup' : 'login';
+            const isSignup = window._authMode === 'signup';
+
+            const subtitle = document.getElementById('auth-subtitle');
+            const nameWrapper = document.getElementById('signup-name-wrapper');
+            const nameInput = document.getElementById('login-name');
+            const passInput = document.getElementById('login-password');
+            const submitBtn = document.getElementById('login-btn');
+            const toggleBtn = document.getElementById('toggle-auth-btn');
+            const errorEl = document.getElementById('login-error');
+
+            if (errorEl) errorEl.classList.add('hidden');
+
+            if (isSignup) {
+                subtitle.textContent = 'Crie sua conta para organizar suas contas';
+                nameWrapper.classList.remove('hidden');
+                nameInput.required = true;
+                passInput.placeholder = 'Crie uma senha (mín. 6 caracteres)';
+                passInput.autocomplete = 'new-password';
+                submitBtn.textContent = 'Criar conta';
+                toggleBtn.textContent = 'Já tenho conta. Fazer login';
+            } else {
+                subtitle.textContent = 'Faça login para acessar suas contas';
+                nameWrapper.classList.add('hidden');
+                nameInput.required = false;
+                passInput.placeholder = 'Senha';
+                passInput.autocomplete = 'current-password';
+                submitBtn.textContent = 'Entrar';
+                toggleBtn.textContent = 'Primeiro acesso? Criar conta';
+            }
+        };
+
+        function translateAuthError(rawCode) {
+            const code = String(rawCode || '');
+            if (code.includes('EMAIL_EXISTS') || code.includes('email-already-in-use')) {
+                return 'Este e-mail já possui cadastro. Toque em "Já tenho conta" para entrar.';
+            }
+            if (code.includes('WEAK_PASSWORD') || code.includes('weak-password')) {
+                return 'A senha precisa ter pelo menos 6 caracteres.';
+            }
+            if (code.includes('INVALID_EMAIL') || code.includes('invalid-email')) {
+                return 'Digite um endereço de e-mail válido.';
+            }
+            if (code.includes('INVALID_LOGIN_CREDENTIALS') || code.includes('wrong-password') || code.includes('user-not-found') || code.includes('invalid-credential')) {
+                return 'E-mail ou senha incorretos.';
+            }
+            if (code.includes('TOO_MANY_ATTEMPTS') || code.includes('too-many-requests')) {
+                return 'Muitas tentativas seguidas. Aguarde alguns instantes e tente novamente.';
+            }
+            return `Não foi possível concluir (${code || 'erro'})`;
+        }
+
+        window.handleAuthSubmit = async function(e) {
             if (e && e.preventDefault) e.preventDefault();
 
+            const isSignup = window._authMode === 'signup';
+            const nameEl = document.getElementById('login-name');
             const emailEl = document.getElementById('login-email');
             const passEl = document.getElementById('login-password');
             const errorEl = document.getElementById('login-error');
             const btn = document.getElementById('login-btn');
 
+            const displayName = nameEl ? nameEl.value.trim() : '';
             const email = emailEl ? emailEl.value.trim() : '';
             const password = passEl ? passEl.value : '';
 
             if (!email || !password) return;
+            if (isSignup && password.length < 6) {
+                if (errorEl) {
+                    errorEl.textContent = 'A senha precisa ter pelo menos 6 caracteres.';
+                    errorEl.classList.remove('hidden');
+                }
+                return;
+            }
 
             if (errorEl) errorEl.classList.add('hidden');
             if (btn) {
                 btn.disabled = true;
-                btn.textContent = 'Entrando...';
+                btn.textContent = isSignup ? 'Criando conta...' : 'Entrando...';
             }
 
             try {
                 if (window.auth && typeof window.auth.signInWithEmailAndPassword === 'function') {
-                    await window.auth.signInWithEmailAndPassword(email, password);
+                    if (isSignup) {
+                        const cred = await window.auth.createUserWithEmailAndPassword(email, password);
+                        if (cred.user && displayName) {
+                            await cred.user.updateProfile({ displayName });
+                            window.onAuthenticatedUser(cred.user);
+                        }
+                    } else {
+                        await window.auth.signInWithEmailAndPassword(email, password);
+                    }
                 } else {
+                    const endpoint = isSignup ? 'accounts:signUp' : 'accounts:signInWithPassword';
+                    const payload = isSignup
+                        ? { email, password, displayName, returnSecureToken: true }
+                        : { email, password, returnSecureToken: true };
+
                     const res = await fetch(
-                        `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${FIREBASE_CONFIG.apiKey}`,
+                        `https://identitytoolkit.googleapis.com/v1/${endpoint}?key=${FIREBASE_CONFIG.apiKey}`,
                         {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ email, password, returnSecureToken: true })
+                            body: JSON.stringify(payload)
                         }
                     );
                     const data = await res.json();
                     if (!res.ok) {
-                        const code = data?.error?.message || 'INVALID_LOGIN_CREDENTIALS';
-                        throw new Error(code);
+                        throw new Error(data?.error?.message || 'AUTH_ERROR');
                     }
+
+                    if (isSignup && displayName && data.idToken) {
+                        await fetch(
+                            `https://identitytoolkit.googleapis.com/v1/accounts:update?key=${FIREBASE_CONFIG.apiKey}`,
+                            {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ idToken: data.idToken, displayName, returnSecureToken: false })
+                            }
+                        );
+                    }
+
                     window.currentUser = {
                         uid: data.localId,
                         email: data.email,
-                        displayName: data.displayName || ''
+                        displayName: displayName || data.displayName || ''
                     };
                     if (typeof window.onAuthenticatedUser === 'function') {
                         window.onAuthenticatedUser(window.currentUser);
@@ -94,13 +183,13 @@
                 }
             } catch (err) {
                 if (errorEl) {
-                    errorEl.textContent = `Falha no login (${err.code || err.message || 'erro'})`;
+                    errorEl.textContent = translateAuthError(err.code || err.message);
                     errorEl.classList.remove('hidden');
                 }
             } finally {
                 if (btn) {
                     btn.disabled = false;
-                    btn.textContent = 'Entrar';
+                    btn.textContent = window._authMode === 'signup' ? 'Criar conta' : 'Entrar';
                 }
             }
         };
@@ -111,16 +200,20 @@
     <!-- Aviso de Erro Técnico -->
     <div id="fatal-error" class="hidden fixed top-4 inset-x-4 z-50 bg-red-600 text-white text-xs p-3 rounded-xl shadow-lg break-words"></div>
 
-    <!-- ================= TELA 1: LOGIN ================= -->
+    <!-- ================= TELA 1: LOGIN / PRIMEIRO ACESSO ================= -->
     <div id="login-screen" class="min-h-screen flex flex-col justify-center px-6 max-w-md mx-auto">
         <div class="text-center mb-8">
             <img src="icon.png" alt="Ícone do app" class="w-16 h-16 rounded-2xl mx-auto mb-4 shadow-md object-cover">
             <h1 class="text-2xl font-bold tracking-tight">Contas a vencer</h1>
-            <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Faça login para acessar suas contas</p>
+            <p id="auth-subtitle" class="text-sm text-gray-500 dark:text-gray-400 mt-1">Faça login para acessar suas contas</p>
         </div>
 
-        <form id="login-form" onsubmit="handleLogin(event)" class="space-y-4">
+        <form id="login-form" onsubmit="handleAuthSubmit(event)" class="space-y-4">
             <div class="bg-white dark:bg-[#1C1C1E] rounded-2xl overflow-hidden divide-y divide-gray-200 dark:divide-gray-800 shadow-sm">
+                <div id="signup-name-wrapper" class="hidden px-4 py-3.5">
+                    <input type="text" id="login-name" placeholder="Seu nome" autocomplete="name"
+                        class="w-full bg-transparent text-base outline-none placeholder-gray-400">
+                </div>
                 <div class="px-4 py-3.5">
                     <input type="email" id="login-email" required placeholder="E-mail" autocomplete="email"
                         class="w-full bg-transparent text-base outline-none placeholder-gray-400">
@@ -136,6 +229,13 @@
             <button type="submit" id="login-btn" class="w-full bg-[#007AFF] active:opacity-80 text-white font-semibold py-3.5 rounded-2xl shadow-sm transition">
                 Entrar
             </button>
+
+            <div class="pt-2 text-center">
+                <button type="button" id="toggle-auth-btn" onclick="toggleAuthMode()"
+                    class="text-[#007AFF] text-sm font-semibold active:opacity-60 py-2">
+                    Primeiro acesso? Criar conta
+                </button>
+            </div>
         </form>
     </div>
 
