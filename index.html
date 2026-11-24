@@ -1,1056 +1,351 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="default">
-    <meta name="apple-mobile-web-app-title" content="Contas">
-    
-    <link rel="apple-touch-icon" href="icon.png">
-    <title>Contas a vencer</title>
-    
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = { darkMode: 'media' }
-    </script>
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
-            -webkit-tap-highlight-color: transparent;
-            padding-top: env(safe-area-inset-top);
-            padding-bottom: env(safe-area-inset-bottom);
-            overscroll-behavior-x: none;
-        }
-        .sheet-enter { transform: translateY(100%); transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1); }
-        .sheet-open { transform: translateY(0); }
-        .swipe-content { transition: transform 0.25s cubic-bezier(0.25, 1, 0.5, 1); }
-        .swipe-dragging { transition: none !important; }
-    </style>
-
-    <script>
-        const FIREBASE_CONFIG = {
-            apiKey: "AIzaSyCXsXTkTOtkXHyge75SDkgfJ2VsPzAizH8",
-            authDomain: "icontas-53234.firebaseapp.com",
-            projectId: "icontas-53234",
-            storageBucket: "icontas-53234.firebasestorage.app",
-            messagingSenderId: "88307899128",
-            appId: "1:88307899128:web:3b136e2ac877540580790d"
-        };
-
-        window._authMode = 'login';
-
-        window.onerror = function(msg) {
-            const box = document.getElementById('fatal-error');
-            if (box) {
-                box.textContent = 'Erro no código: ' + msg;
-                box.classList.remove('hidden');
-            }
-        };
-
-        window.toggleAuthMode = function() {
-            window._authMode = window._authMode === 'login' ? 'signup' : 'login';
-            const isSignup = window._authMode === 'signup';
-
-            const subtitle = document.getElementById('auth-subtitle');
-            const nameWrapper = document.getElementById('signup-name-wrapper');
-            const nameInput = document.getElementById('login-name');
-            const passInput = document.getElementById('login-password');
-            const submitBtn = document.getElementById('login-btn');
-            const toggleBtn = document.getElementById('toggle-auth-btn');
-            const errorEl = document.getElementById('login-error');
-
-            if (errorEl) errorEl.classList.add('hidden');
-
-            if (isSignup) {
-                subtitle.textContent = 'Crie sua conta para organizar suas contas';
-                nameWrapper.classList.remove('hidden');
-                nameInput.required = true;
-                passInput.placeholder = 'Crie uma senha (mín. 6 caracteres)';
-                passInput.autocomplete = 'new-password';
-                submitBtn.textContent = 'Criar conta';
-                toggleBtn.textContent = 'Já tenho conta. Fazer login';
-            } else {
-                subtitle.textContent = 'Faça login para acessar suas contas';
-                nameWrapper.classList.add('hidden');
-                nameInput.required = false;
-                passInput.placeholder = 'Senha';
-                passInput.autocomplete = 'current-password';
-                submitBtn.textContent = 'Entrar';
-                toggleBtn.textContent = 'Primeiro acesso? Criar conta';
-            }
-        };
-
-        function translateAuthError(rawCode) {
-            const code = String(rawCode || '');
-            if (code.includes('EMAIL_EXISTS') || code.includes('email-already-in-use')) {
-                return 'Este e-mail já possui cadastro. Toque em "Já tenho conta" para entrar.';
-            }
-            if (code.includes('WEAK_PASSWORD') || code.includes('weak-password')) {
-                return 'A senha precisa ter pelo menos 6 caracteres.';
-            }
-            if (code.includes('INVALID_EMAIL') || code.includes('invalid-email')) {
-                return 'Digite um endereço de e-mail válido.';
-            }
-            if (code.includes('INVALID_LOGIN_CREDENTIALS') || code.includes('wrong-password') || code.includes('user-not-found') || code.includes('invalid-credential')) {
-                return 'E-mail ou senha incorretos.';
-            }
-            if (code.includes('TOO_MANY_ATTEMPTS') || code.includes('too-many-requests')) {
-                return 'Muitas tentativas seguidas. Aguarde alguns instantes e tente novamente.';
-            }
-            return `Não foi possível concluir (${code || 'erro'})`;
-        }
-
-        window.handleAuthSubmit = async function(e) {
-            if (e && e.preventDefault) e.preventDefault();
-
-            const isSignup = window._authMode === 'signup';
-            const nameEl = document.getElementById('login-name');
-            const emailEl = document.getElementById('login-email');
-            const passEl = document.getElementById('login-password');
-            const errorEl = document.getElementById('login-error');
-            const btn = document.getElementById('login-btn');
-
-            const displayName = nameEl ? nameEl.value.trim() : '';
-            const email = emailEl ? emailEl.value.trim() : '';
-            const password = passEl ? passEl.value : '';
-
-            if (!email || !password) return;
-            if (isSignup && password.length < 6) {
-                if (errorEl) {
-                    errorEl.textContent = 'A senha precisa ter pelo menos 6 caracteres.';
-                    errorEl.classList.remove('hidden');
-                }
-                return;
-            }
-
-            if (errorEl) errorEl.classList.add('hidden');
-            if (btn) {
-                btn.disabled = true;
-                btn.textContent = isSignup ? 'Criando conta...' : 'Entrando...';
-            }
-
-            try {
-                if (window.auth && typeof window.auth.signInWithEmailAndPassword === 'function') {
-                    if (isSignup) {
-                        const cred = await window.auth.createUserWithEmailAndPassword(email, password);
-                        if (cred.user && displayName) {
-                            await cred.user.updateProfile({ displayName });
-                            window.onAuthenticatedUser(cred.user);
-                        }
-                    } else {
-                        await window.auth.signInWithEmailAndPassword(email, password);
-                    }
-                } else {
-                    const endpoint = isSignup ? 'accounts:signUp' : 'accounts:signInWithPassword';
-                    const payload = isSignup
-                        ? { email, password, displayName, returnSecureToken: true }
-                        : { email, password, returnSecureToken: true };
-
-                    const res = await fetch(
-                        `https://identitytoolkit.googleapis.com/v1/${endpoint}?key=${FIREBASE_CONFIG.apiKey}`,
-                        {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(payload)
-                        }
-                    );
-                    const data = await res.json();
-                    if (!res.ok) {
-                        throw new Error(data?.error?.message || 'AUTH_ERROR');
-                    }
-
-                    if (isSignup && displayName && data.idToken) {
-                        await fetch(
-                            `https://identitytoolkit.googleapis.com/v1/accounts:update?key=${FIREBASE_CONFIG.apiKey}`,
-                            {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ idToken: data.idToken, displayName, returnSecureToken: false })
-                            }
-                        );
-                    }
-
-                    window.currentUser = {
-                        uid: data.localId,
-                        email: data.email,
-                        displayName: displayName || data.displayName || ''
-                    };
-                    if (typeof window.onAuthenticatedUser === 'function') {
-                        window.onAuthenticatedUser(window.currentUser);
-                    }
-                }
-            } catch (err) {
-                if (errorEl) {
-                    errorEl.textContent = translateAuthError(err.code || err.message);
-                    errorEl.classList.remove('hidden');
-                }
-            } finally {
-                if (btn) {
-                    btn.disabled = false;
-                    btn.textContent = window._authMode === 'signup' ? 'Criar conta' : 'Entrar';
-                }
-            }
-        };
-    </script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F2F2F7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Contas">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon.png">
+<title>Contas a vencer</title>
+<style>
+:root{--bg:#F2F2F7;--card:#fff;--ink:#000;--mut:#6b7280;--line:#e5e7eb;--blue:#007AFF;--red:#DC2626;--org:#EA580C;--grn:#16A34A;--fld:#f3f4f6;color-scheme:light dark}
+@media(prefers-color-scheme:dark){:root{--bg:#000;--card:#1C1C1E;--ink:#fff;--mut:#9ca3af;--line:#2c2c2e;--red:#f87171;--org:#fb923c;--grn:#22c55e;--fld:#3a3a3c}}
+*{box-sizing:border-box;margin:0;-webkit-tap-highlight-color:transparent}
+body{font:16px -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink);min-height:100vh;overflow-x:hidden}
+.hide{display:none!important}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+input{font:inherit;color:inherit;background:transparent;border:0;outline:0;width:100%}
+.red{color:var(--red)}.org{color:var(--org)}.grn{color:var(--grn)}.mut{color:var(--mut)}
+.card{background:var(--card);border-radius:16px;overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,.06)}
+.ic{width:16px;height:16px;display:block;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+#login{min-height:100vh;display:flex;flex-direction:column;justify-content:center;max-width:28rem;margin:0 auto;padding:24px}
+#login img{width:64px;height:64px;border-radius:16px;display:block;margin:0 auto 16px;box-shadow:0 2px 8px rgba(0,0,0,.2)}
+#login h1{font-size:24px;text-align:center}
+#sub{font-size:14px;color:var(--mut);text-align:center;margin:4px 0 28px}
+.in{padding:14px 16px}.in+.in{border-top:1px solid var(--line)}
+.btn{width:100%;background:var(--blue);color:#fff;font-weight:600;padding:14px;border-radius:16px;margin-top:16px}
+.btn:disabled{opacity:.6}
+.lnk{color:var(--blue);font-size:14px;font-weight:600;padding:8px;display:block;margin:6px auto 0}
+#err{color:var(--red);font-size:14px;font-weight:500;text-align:center;margin-top:12px}
+.hd{position:sticky;top:0;z-index:30;background:var(--bg);padding:calc(env(safe-area-inset-top) + 8px) 16px 8px;border-bottom:1px solid var(--line)}
+.hd-in,.main{max-width:32rem;margin:0 auto}
+.hd .out{color:var(--blue);font-size:15px;height:28px}
+#greet{font-size:13px;font-weight:500;color:var(--mut)}
+#title{font-size:30px;font-weight:700;line-height:1.15}
+.tabs{display:grid;grid-template-columns:1fr 1fr;background:var(--line);padding:4px;border-radius:12px;margin-top:10px}
+.tab{padding:4px;font-size:14px;font-weight:600;border-radius:8px;color:var(--mut)}
+.tab.on{background:var(--card);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.15)}
+.main{padding:14px 16px 120px;display:flex;flex-direction:column;gap:14px}
+#totals{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+#totals div{background:var(--card);border-radius:16px;padding:10px 14px;font-size:12px;font-weight:500;color:var(--mut)}
+#totals b{display:block;font-size:16px;margin-top:2px;color:var(--ink)}
+#totals .p b{color:var(--grn)}
+.banner{display:flex;align-items:center;gap:10px;padding:12px;border-radius:12px;font-size:12px;font-weight:600}
+.banner .ic{flex:none}
+.red-bg{background:rgba(239,68,68,.15);color:var(--red)}.org-bg{background:rgba(249,115,22,.15);color:var(--org)}
+#empty{text-align:center;padding:64px 0;color:var(--mut)}
+#list{display:flex;flex-direction:column;gap:16px}
+#list h2{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:0 4px 4px}
+.row-w{position:relative;overflow:hidden;background:#ef4444}
+.row-w+.row-w{border-top:1px solid var(--line)}
+.trash{position:absolute;top:0;bottom:0;right:0;width:76px;background:#ef4444;color:#fff;display:flex;align-items:center;justify-content:center}
+.trash .ic{width:20px;height:20px}
+.sw{position:relative;background:var(--card);display:flex;align-items:center;gap:6px;padding:10px 14px;transition:transform .25s cubic-bezier(.25,1,.5,1)}
+.info{flex:1;min-width:0}
+.nm{font-weight:600;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.paid .nm{text-decoration:line-through;color:var(--mut)}
+.meta{display:flex;flex-wrap:wrap;gap:2px 6px;font-size:12px;line-height:1.2;margin-top:3px}
+.meta span{white-space:nowrap}
+.rec{font-size:10px;font-weight:600;padding:1px 6px;border-radius:4px;background:rgba(0,122,255,.12);color:var(--blue)}
+.acts{display:flex;align-items:center;flex:none}
+.ib{padding:6px;color:var(--mut)}
+.pay{font-size:13px;font-weight:700;min-width:82px;padding:4px 10px;margin-left:2px;border-radius:999px;border:2px solid var(--ink)}
+.pay.on{background:var(--grn);border-color:var(--grn);color:#fff}
+.fab{position:fixed;left:0;right:0;bottom:0;z-index:20;display:flex;justify-content:center;padding-bottom:calc(16px + env(safe-area-inset-bottom));pointer-events:none}
+.fab button{pointer-events:auto;width:56px;height:56px;border-radius:50%;background:var(--blue);color:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 8px 20px rgba(0,122,255,.3)}
+.fab .ic{width:28px;height:28px;stroke-width:2.5}
+#backdrop{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:40;opacity:0;transition:opacity .3s}
+#backdrop.on{opacity:1}
+#sheet{position:fixed;left:0;right:0;bottom:0;z-index:50;background:var(--bg);border-radius:16px 16px 0 0;box-shadow:0 -10px 40px rgba(0,0,0,.25);transform:translateY(100%);transition:transform .3s cubic-bezier(.32,.72,0,1);padding-bottom:calc(24px + env(safe-area-inset-bottom));max-height:90vh;overflow-y:auto}
+#sheet.open{transform:none}
+.sh-in{max-width:32rem;margin:0 auto}
+.sh-hd{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--line)}
+.sh-hd h2{font-size:16px}
+.sh-hd button{color:var(--blue)}
+.sh-hd #m-save{font-weight:600}.sh-hd #m-save:disabled{opacity:.3}
+.sh-bd{padding:16px;display:flex;flex-direction:column;gap:12px}
+.f{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px}
+.f+.f{border-top:1px solid var(--line)}
+.f .fi{background:var(--fld);padding:6px 12px;border-radius:8px;text-align:right;width:auto}
+.f small{display:block;font-size:12px;color:var(--mut)}
+input[type=checkbox].tg{appearance:none;-webkit-appearance:none;width:44px;height:26px;flex:none;border-radius:13px;background:#9ca3af;position:relative;transition:.2s}
+.tg::after{content:"";position:absolute;top:2px;left:2px;width:22px;height:22px;border-radius:50%;background:#fff;transition:.2s}
+.tg:checked{background:#34C759}.tg:checked::after{transform:translateX(18px)}
+.wide{width:100%;background:var(--card);padding:12px;border-radius:12px;font-weight:600;color:var(--blue)}
+.wide.d{color:var(--red);font-weight:500}
+.toast{position:fixed;top:calc(env(safe-area-inset-top) + 8px);left:16px;right:16px;z-index:70;background:var(--blue);color:#fff;font-size:13px;font-weight:600;text-align:center;padding:10px;border-radius:12px;box-shadow:0 6px 20px rgba(0,0,0,.25)}
+.toast.err{background:#DC2626}
+</style>
 </head>
-<body class="bg-[#F2F2F7] dark:bg-black text-black dark:text-white min-h-screen select-none overflow-x-hidden">
+<body>
 
-    <!-- Aviso de Erro Técnico -->
-    <div id="fatal-error" class="hidden fixed top-4 inset-x-4 z-50 bg-red-600 text-white text-xs p-3 rounded-xl shadow-lg break-words"></div>
+<div id="toast" class="hide" role="status"></div>
 
-    <!-- ================= TELA 1: LOGIN / PRIMEIRO ACESSO ================= -->
-    <div id="login-screen" class="min-h-screen flex flex-col justify-center px-6 max-w-md mx-auto">
-        <div class="text-center mb-8">
-            <img src="icon.png" alt="Ícone do app" class="w-16 h-16 rounded-2xl mx-auto mb-4 shadow-md object-cover">
-            <h1 class="text-2xl font-bold tracking-tight">Contas a vencer</h1>
-            <p id="auth-subtitle" class="text-sm text-gray-500 dark:text-gray-400 mt-1">Faça login para acessar suas contas</p>
-        </div>
-
-        <form id="login-form" onsubmit="handleAuthSubmit(event)" class="space-y-4">
-            <div class="bg-white dark:bg-[#1C1C1E] rounded-2xl overflow-hidden divide-y divide-gray-200 dark:divide-gray-800 shadow-sm">
-                <div id="signup-name-wrapper" class="hidden px-4 py-3.5">
-                    <input type="text" id="login-name" placeholder="Seu nome" autocomplete="name"
-                        class="w-full bg-transparent text-base outline-none placeholder-gray-400">
-                </div>
-                <div class="px-4 py-3.5">
-                    <input type="email" id="login-email" required placeholder="E-mail" autocomplete="email"
-                        class="w-full bg-transparent text-base outline-none placeholder-gray-400">
-                </div>
-                <div class="px-4 py-3.5">
-                    <input type="password" id="login-password" required placeholder="Senha" autocomplete="current-password"
-                        class="w-full bg-transparent text-base outline-none placeholder-gray-400">
-                </div>
-            </div>
-
-            <p id="login-error" class="hidden text-red-500 text-sm text-center font-medium"></p>
-
-            <button type="submit" id="login-btn" class="w-full bg-[#007AFF] active:opacity-80 text-white font-semibold py-3.5 rounded-2xl shadow-sm transition">
-                Entrar
-            </button>
-
-            <div class="pt-2 text-center">
-                <button type="button" id="toggle-auth-btn" onclick="toggleAuthMode()"
-                    class="text-[#007AFF] text-sm font-semibold active:opacity-60 py-2">
-                    Primeiro acesso? Criar conta
-                </button>
-            </div>
-        </form>
+<!-- LOGIN -->
+<div id="login" class="hide">
+  <img src="icon.png" alt="">
+  <h1>Contas a vencer</h1>
+  <p id="sub">Faça login para acessar suas contas</p>
+  <form id="form" onsubmit="submitAuth(event)">
+    <div class="card">
+      <div class="in hide" id="name-row"><input id="name" placeholder="Seu nome" autocomplete="name"></div>
+      <div class="in"><input id="email" type="email" required placeholder="E-mail" autocomplete="email"></div>
+      <div class="in"><input id="pass" type="password" required placeholder="Senha" autocomplete="current-password"></div>
     </div>
+    <p id="err" class="hide"></p>
+    <button id="go" class="btn" type="submit">Entrar</button>
+    <button id="toggle" class="lnk" type="button" onclick="setMode(mode=='login'?'signup':'login')">Primeiro acesso? Criar conta</button>
+    <button id="forgot" class="lnk mut" type="button" onclick="forgot()">Esqueci minha senha</button>
+  </form>
+</div>
 
-    <!-- ================= TELA 2: APP DE CONTAS ================= -->
-    <div id="app-screen" class="hidden">
-        <header class="sticky top-0 z-30 bg-[#F2F2F7] dark:bg-black px-4 pt-2.5 pb-2 border-b border-gray-200 dark:border-gray-800 shadow-sm">
-            <div class="flex justify-between items-center h-7">
-                <button type="button" onclick="handleLogout()" class="text-[#007AFF] text-[15px] active:opacity-50">
-                    Sair
-                </button>
-            </div>
-            <p id="user-greeting" class="text-[13px] font-medium text-gray-500 dark:text-gray-400 mt-0.5">Olá.</p>
-            <h1 id="page-title" class="text-[30px] font-bold tracking-tight leading-tight">Contas a vencer</h1>
-
-            <!-- Seletor de Página: Histórico (esquerda) x Mês atual (direita) -->
-            <div class="mt-2.5 grid grid-cols-2 bg-gray-200 dark:bg-[#1C1C1E] p-1 rounded-xl">
-                <button type="button" id="tab-history" onclick="switchPage('history')"
-                    class="py-1 text-sm font-semibold rounded-lg text-gray-600 dark:text-gray-400 transition">
-                    Histórico
-                </button>
-                <button type="button" id="tab-current" onclick="switchPage('current')"
-                    class="py-1 text-sm font-semibold rounded-lg bg-white dark:bg-[#2C2C2E] text-black dark:text-white shadow-sm transition">
-                    Mês atual
-                </button>
-            </div>
-        </header>
-
-        <main class="relative z-0 px-4 py-3.5 max-w-lg mx-auto space-y-3.5 pb-28">
-            <!-- Resumo simples de valores -->
-            <div id="totals-card" class="hidden grid grid-cols-2 gap-2.5">
-                <div class="bg-white dark:bg-[#1C1C1E] rounded-2xl px-3.5 py-2.5 shadow-sm">
-                    <div id="label-open" class="text-xs font-medium text-gray-500 dark:text-gray-400">Em aberto</div>
-                    <div id="total-open" class="text-base font-bold mt-0.5">R$ 0,00</div>
-                </div>
-                <div class="bg-white dark:bg-[#1C1C1E] rounded-2xl px-3.5 py-2.5 shadow-sm">
-                    <div id="label-paid" class="text-xs font-medium text-gray-500 dark:text-gray-400">Pagas</div>
-                    <div id="total-paid" class="text-base font-bold text-green-600 dark:text-green-500 mt-0.5">R$ 0,00</div>
-                </div>
-            </div>
-
-            <div id="alert-banner" class="hidden rounded-xl p-3 flex items-center gap-2.5 font-semibold text-xs shadow-sm">
-                <svg class="w-4 h-4 shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                    <path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z"/>
-                </svg>
-                <span id="alert-text"></span>
-            </div>
-
-            <div id="recurring-toast" class="hidden rounded-xl p-2.5 bg-[#007AFF]/15 text-[#007AFF] text-xs font-semibold text-center"></div>
-
-            <div id="empty-state" class="hidden text-center py-16 text-gray-500 dark:text-gray-400">
-                <p id="empty-text" class="text-base">Nenhuma conta ainda.<br>Toque em <strong>+</strong> para começar.</p>
-            </div>
-
-            <!-- Contêiner das seções agrupadas -->
-            <div id="grouped-bills" class="space-y-4"></div>
-        </main>
-
-        <!-- Botão + Centralizado na Parte Inferior -->
-        <div class="fixed inset-x-0 bottom-0 z-20 pointer-events-none flex justify-center pb-[calc(1rem+env(safe-area-inset-bottom))]">
-            <button type="button" onclick="openModal()" aria-label="Nova conta"
-                class="pointer-events-auto w-14 h-14 rounded-full bg-[#007AFF] text-white shadow-lg shadow-blue-500/30 flex items-center justify-center active:scale-95 transition">
-                <svg class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/>
-                </svg>
-            </button>
-        </div>
+<!-- APP -->
+<div id="app" class="hide">
+  <header class="hd"><div class="hd-in">
+    <button class="out" onclick="logout()">Sair</button>
+    <p id="greet">Olá.</p>
+    <h1 id="title">Contas a vencer</h1>
+    <div class="tabs">
+      <button id="tab-h" class="tab" onclick="switchPage('history')">Histórico</button>
+      <button id="tab-c" class="tab on" onclick="switchPage('current')">Mês atual</button>
     </div>
+  </div></header>
 
-    <!-- Modal / Sheet -->
-    <div id="modal-backdrop" onclick="closeModal()" class="fixed inset-0 bg-black/40 z-40 hidden opacity-0 transition-opacity duration-300"></div>
-    
-    <div id="bill-sheet" class="fixed inset-x-0 bottom-0 z-50 bg-[#F2F2F7] dark:bg-[#1C1C1E] rounded-t-2xl shadow-2xl sheet-enter hidden pb-8">
-        <div class="flex items-center justify-between px-4 py-3.5 border-b border-gray-200 dark:border-gray-800">
-            <button type="button" onclick="closeModal()" class="text-[#007AFF] text-base active:opacity-50">Cancelar</button>
-            <h2 id="modal-title" class="font-semibold text-base">Nova conta</h2>
-            <button type="button" id="save-btn" onclick="saveBill()" class="text-[#007AFF] font-semibold text-base disabled:opacity-30 active:opacity-50" disabled>Salvar</button>
-        </div>
-
-        <div class="p-4 space-y-3">
-            <div class="bg-white dark:bg-[#2C2C2E] rounded-xl overflow-hidden divide-y divide-gray-200 dark:divide-gray-700">
-                <div class="px-4 py-3">
-                    <input type="text" id="bill-name" placeholder="Nome da conta (ex: Luz, Internet)" oninput="validateForm()"
-                        class="w-full bg-transparent text-base outline-none placeholder-gray-400">
-                </div>
-                <div class="px-4 py-3 flex items-center justify-between">
-                    <label for="bill-amount" class="text-base">Valor (opcional)</label>
-                    <input type="number" id="bill-amount" step="0.01" min="0" inputmode="decimal" placeholder="0,00"
-                        class="w-32 bg-gray-100 dark:bg-[#3A3A3C] px-3 py-1.5 rounded-lg text-base outline-none text-right">
-                </div>
-                <div class="px-4 py-3 flex items-center justify-between">
-                    <label for="bill-date" class="text-base">Vencimento</label>
-                    <input type="date" id="bill-date" onchange="validateForm()"
-                        class="bg-gray-100 dark:bg-[#3A3A3C] px-3 py-1.5 rounded-lg text-base outline-none text-right">
-                </div>
-                <label for="bill-recurring" class="px-4 py-3.5 flex items-center justify-between cursor-pointer">
-                    <div>
-                        <div class="text-base">Repetir mensalmente</div>
-                        <div class="text-xs text-gray-500 dark:text-gray-400">Aparece na virada do mês e cria próximo mês ao pagar</div>
-                    </div>
-                    <div class="relative inline-flex items-center">
-                        <input type="checkbox" id="bill-recurring" class="sr-only peer">
-                        <div class="w-11 h-6 bg-gray-300 dark:bg-gray-600 rounded-full peer peer-checked:bg-[#34C759] transition-colors after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-5 shadow-inner"></div>
-                    </div>
-                </label>
-            </div>
-
-            <button type="button" id="modal-calendar-btn" onclick="exportEditingBillToCalendar()" class="hidden w-full bg-white dark:bg-[#2C2C2E] text-[#007AFF] font-semibold py-3 rounded-xl active:bg-gray-100 dark:active:bg-gray-700">
-                Adicionar vencimento ao Calendário
-            </button>
-
-            <button type="button" id="delete-btn" onclick="deleteCurrentBill()" class="hidden w-full bg-white dark:bg-[#2C2C2E] text-red-500 font-medium py-3 rounded-xl active:bg-gray-100 dark:active:bg-gray-700">
-                Excluir conta
-            </button>
-        </div>
+  <main class="main">
+    <div id="totals" class="hide">
+      <div>Em aberto<b id="t-open">R$ 0,00</b></div>
+      <div class="p">Pagas<b id="t-paid">R$ 0,00</b></div>
     </div>
-
-    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
-
-    <script>
-        window.auth = null;
-        window.db = null;
-        window.currentUser = null;
-
-        let bills = [];
-        let editingId = null;
-        let unsubscribeBills = null;
-        let currentPage = 'current';
-
-        function getUserBillsCollection() {
-            if (!window.db || !window.currentUser) return null;
-            return window.db.collection("users").doc(window.currentUser.uid).collection("bills");
-        }
-
-        function formatUserName(user) {
-            if (user.displayName && user.displayName.trim()) {
-                return user.displayName.trim();
-            }
-            if (user.email) {
-                const rawName = user.email.split('@')[0].replace(/[._-]+/g, ' ').trim();
-                return rawName.charAt(0).toUpperCase() + rawName.slice(1);
-            }
-            return 'Usuário';
-        }
-
-        function formatBRL(value) {
-            const num = Number(value) || 0;
-            return num.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-        }
-
-        function isIOSDevice() {
-            return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-                (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-        }
-
-        function formatCalDate(isoDateStr) {
-            return isoDateStr.replace(/-/g, '');
-        }
-
-        function getNextDayCalDate(isoDateStr) {
-            const d = parseLocalDate(isoDateStr);
-            d.setDate(d.getDate() + 1);
-            const y = d.getFullYear();
-            const m = String(d.getMonth() + 1).padStart(2, '0');
-            const day = String(d.getDate()).padStart(2, '0');
-            return `${y}${m}${day}`;
-        }
-
-        function escapeICSText(str) {
-            return String(str || '')
-                .replace(/\\/g, '\\\\')
-                .replace(/;/g, '\\;')
-                .replace(/,/g, '\\,')
-                .replace(/\n/g, '\\n');
-        }
-
-        function buildICSContentForBill(bill) {
-            const startICS = formatCalDate(bill.dueDate);
-            const endICS = getNextDayCalDate(bill.dueDate);
-            const nowStamp = new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
-
-            const amountLine = bill.amount != null && Number(bill.amount) > 0
-                ? `Valor: ${formatBRL(bill.amount)}`
-                : 'Lembrete de vencimento de conta';
-
-            return [
-                'BEGIN:VCALENDAR',
-                'VERSION:2.0',
-                'PRODID:-//Contas a vencer//PWA//PT',
-                'CALSCALE:GREGORIAN',
-                'METHOD:PUBLISH',
-                'BEGIN:VEVENT',
-                `UID:${bill.id || Date.now()}-${startICS}@contas-pwa`,
-                `DTSTAMP:${nowStamp}`,
-                `DTSTART;VALUE=DATE:${startICS}`,
-                `DTEND;VALUE=DATE:${endICS}`,
-                `SUMMARY:${escapeICSText(`Vencimento: ${bill.name}`)}`,
-                `DESCRIPTION:${escapeICSText(amountLine)}`,
-                'BEGIN:VALARM',
-                'ACTION:DISPLAY',
-                `DESCRIPTION:${escapeICSText(`Vencimento hoje: ${bill.name}`)}`,
-                'TRIGGER:PT9H',
-                'END:VALARM',
-                'END:VEVENT',
-                'END:VCALENDAR'
-            ].join('\r\n');
-        }
-
-        function buildGoogleCalendarURL(bill) {
-            const startDate = formatCalDate(bill.dueDate);
-            const endDate = getNextDayCalDate(bill.dueDate);
-            const title = `Vencimento: ${bill.name}`;
-            const details = bill.amount != null && Number(bill.amount) > 0
-                ? `Valor: ${formatBRL(bill.amount)}`
-                : 'Lembrete de vencimento de conta';
-
-            const params = new URLSearchParams({
-                action: 'TEMPLATE',
-                text: title,
-                dates: `${startDate}/${endDate}`,
-                details
-            });
-
-            return `https://calendar.google.com/calendar/render?${params.toString()}`;
-        }
-
-        function triggerCalendarOpen(bill) {
-            if (!bill || !bill.name || !bill.dueDate) return;
-
-            if (isIOSDevice()) {
-                const icsContent = buildICSContentForBill(bill);
-                const safeSlug = bill.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'conta';
-                const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
-                const url = URL.createObjectURL(blob);
-                const link = document.createElement('a');
-                link.href = url;
-                link.download = `vencimento-${safeSlug}.ics`;
-                link.style.display = 'none';
-                document.body.appendChild(link);
-                link.click();
-                setTimeout(() => {
-                    document.body.removeChild(link);
-                    URL.revokeObjectURL(url);
-                }, 1000);
-                showToast(`Evento de "${bill.name}" enviado para o Calendário.`);
-                return;
-            }
-
-            const url = buildGoogleCalendarURL(bill);
-            window.open(url, '_blank', 'noopener,noreferrer');
-            showToast(`Evento de "${bill.name}" aberto no Calendário.`);
-        }
-
-        function exportBillToCalendar(id) {
-            const bill = bills.find(b => b.id === id);
-            if (!bill || !bill.dueDate) return;
-            triggerCalendarOpen(bill);
-        }
-
-        function exportEditingBillToCalendar() {
-            const name = document.getElementById('bill-name').value.trim();
-            const rawAmount = document.getElementById('bill-amount').value;
-            const amount = rawAmount !== '' ? Number(rawAmount) : null;
-            const dueDate = document.getElementById('bill-date').value;
-            if (!name || !dueDate) return;
-
-            triggerCalendarOpen({
-                id: editingId || String(Date.now()),
-                name,
-                amount,
-                dueDate
-            });
-        }
-
-        function switchPage(page) {
-            currentPage = page;
-            const tabCurrent = document.getElementById('tab-current');
-            const tabHistory = document.getElementById('tab-history');
-            const pageTitle = document.getElementById('page-title');
-
-            if (page === 'current') {
-                tabCurrent.className = 'py-1 text-sm font-semibold rounded-lg bg-white dark:bg-[#2C2C2E] text-black dark:text-white shadow-sm transition';
-                tabHistory.className = 'py-1 text-sm font-semibold rounded-lg text-gray-600 dark:text-gray-400 transition';
-                pageTitle.textContent = 'Contas a vencer';
-            } else {
-                tabHistory.className = 'py-1 text-sm font-semibold rounded-lg bg-white dark:bg-[#2C2C2E] text-black dark:text-white shadow-sm transition';
-                tabCurrent.className = 'py-1 text-sm font-semibold rounded-lg text-gray-600 dark:text-gray-400 transition';
-                pageTitle.textContent = 'Histórico';
-            }
-            render();
-        }
-
-        function getMonthKeyFromDateStr(isoDateStr) {
-            const [y, m] = isoDateStr.split('-');
-            return `${y}-${m}`;
-        }
-
-        function getOffsetMonthKey(monthOffset) {
-            const now = new Date();
-            const d = new Date(now.getFullYear(), now.getMonth() + monthOffset, 1);
-            const y = d.getFullYear();
-            const m = String(d.getMonth() + 1).padStart(2, '0');
-            return `${y}-${m}`;
-        }
-
-        function formatMonthLabel(monthKey) {
-            const [y, m] = monthKey.split('-').map(Number);
-            const d = new Date(y, m - 1, 1);
-            return d.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
-        }
-
-        window.onAuthenticatedUser = function(user) {
-            window.currentUser = user;
-            if (user) {
-                document.getElementById('user-greeting').textContent = `Olá ${formatUserName(user)}.`;
-                document.getElementById('login-screen').classList.add('hidden');
-                document.getElementById('app-screen').classList.remove('hidden');
-                startListeningBills();
-            } else {
-                if (unsubscribeBills) { unsubscribeBills(); unsubscribeBills = null; }
-                bills = [];
-                render();
-                document.getElementById('app-screen').classList.add('hidden');
-                document.getElementById('login-screen').classList.remove('hidden');
-            }
-        };
-
-        try {
-            if (typeof firebase !== 'undefined') {
-                if (!firebase.apps.length) {
-                    firebase.initializeApp(FIREBASE_CONFIG);
-                }
-                window.auth = firebase.auth();
-                window.db = firebase.firestore();
-
-                window.auth.onAuthStateChanged((user) => {
-                    window.onAuthenticatedUser(user);
-                });
-            }
-        } catch (err) {
-            const box = document.getElementById('fatal-error');
-            if (box) {
-                box.textContent = 'Aviso Firebase: ' + err.message;
-                box.classList.remove('hidden');
-            }
-        }
-
-        async function handleLogout() {
-            if (window.auth) await window.auth.signOut();
-            window.onAuthenticatedUser(null);
-        }
-
-        function startListeningBills() {
-            if (unsubscribeBills) { unsubscribeBills(); unsubscribeBills = null; }
-            const colRef = getUserBillsCollection();
-            if (!colRef) return;
-
-            unsubscribeBills = colRef.onSnapshot((snapshot) => {
-                bills = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                render();
-            }, (error) => {
-                const box = document.getElementById('fatal-error');
-                box.textContent = 'Erro no banco de dados: ' + error.message;
-                box.classList.remove('hidden');
-            });
-        }
-
-        function addOneMonthISO(isoDateStr) {
-            const [y, m, d] = isoDateStr.split('-').map(Number);
-            const targetMonthIndex = m;
-            const daysInTargetMonth = new Date(y, targetMonthIndex + 1, 0).getDate();
-            const safeDay = Math.min(d, daysInTargetMonth);
-            const nextDate = new Date(y, targetMonthIndex, safeDay);
-
-            const ny = nextDate.getFullYear();
-            const nm = String(nextDate.getMonth() + 1).padStart(2, '0');
-            const nd = String(nextDate.getDate()).padStart(2, '0');
-            return `${ny}-${nm}-${nd}`;
-        }
-
-        function showToast(msg) {
-            const toast = document.getElementById('recurring-toast');
-            toast.textContent = msg;
-            toast.classList.remove('hidden');
-            clearTimeout(window._toastTimer);
-            window._toastTimer = setTimeout(() => toast.classList.add('hidden'), 3500);
-        }
-
-        async function togglePaid(id) {
-            const colRef = getUserBillsCollection();
-            const bill = bills.find(b => b.id === id);
-            if (!colRef || !bill) return;
-
-            const markingAsPaid = !bill.isPaid;
-
-            if (markingAsPaid && bill.isRecurring && !bill.nextGenerated) {
-                const nextDueDate = addOneMonthISO(bill.dueDate);
-                await colRef.doc(id).update({ isPaid: true, nextGenerated: true });
-                await colRef.add({
-                    name: bill.name,
-                    amount: bill.amount ?? null,
-                    dueDate: nextDueDate,
-                    isPaid: false,
-                    isRecurring: true,
-                    nextGenerated: false
-                });
-                showToast(`Próxima "${bill.name}" criada para ${formatShortDate(nextDueDate)}.`);
-            } else {
-                await colRef.doc(id).update({ isPaid: markingAsPaid });
-            }
-        }
-
-        async function deleteBillById(id) {
-            const colRef = getUserBillsCollection();
-            if (!colRef) return;
-            await colRef.doc(id).delete();
-        }
-
-        function openModal(id = null) {
-            closeAllSwipes();
-            editingId = id;
-            const modalTitle = document.getElementById('modal-title');
-            const nameInput = document.getElementById('bill-name');
-            const amountInput = document.getElementById('bill-amount');
-            const dateInput = document.getElementById('bill-date');
-            const recurringInput = document.getElementById('bill-recurring');
-            const calendarBtn = document.getElementById('modal-calendar-btn');
-            const deleteBtn = document.getElementById('delete-btn');
-
-            if (id) {
-                const bill = bills.find(b => b.id === id);
-                modalTitle.textContent = 'Editar conta';
-                nameInput.value = bill.name;
-                amountInput.value = bill.amount != null ? bill.amount : '';
-                dateInput.value = bill.dueDate;
-                recurringInput.checked = Boolean(bill.isRecurring);
-                calendarBtn.classList.remove('hidden');
-                deleteBtn.classList.remove('hidden');
-            } else {
-                modalTitle.textContent = 'Nova conta';
-                nameInput.value = '';
-                amountInput.value = '';
-                const defaultDate = new Date();
-                defaultDate.setDate(defaultDate.getDate() + 3);
-                dateInput.value = defaultDate.toISOString().split('T')[0];
-                recurringInput.checked = false;
-                calendarBtn.classList.add('hidden');
-                deleteBtn.classList.add('hidden');
-            }
-
-            validateForm();
-            const backdrop = document.getElementById('modal-backdrop');
-            const sheet = document.getElementById('bill-sheet');
-            backdrop.classList.remove('hidden');
-            sheet.classList.remove('hidden');
-            requestAnimationFrame(() => {
-                backdrop.classList.remove('opacity-0');
-                sheet.classList.add('sheet-open');
-            });
-            setTimeout(() => nameInput.focus(), 100);
-        }
-
-        function closeModal() {
-            const backdrop = document.getElementById('modal-backdrop');
-            const sheet = document.getElementById('bill-sheet');
-            backdrop.classList.add('opacity-0');
-            sheet.classList.remove('sheet-open');
-            setTimeout(() => { backdrop.classList.add('hidden'); sheet.classList.add('hidden'); }, 300);
-        }
-
-        function validateForm() {
-            const name = document.getElementById('bill-name').value.trim();
-            const date = document.getElementById('bill-date').value;
-            document.getElementById('save-btn').disabled = !(name.length > 0 && date);
-        }
-
-        async function saveBill() {
-            const colRef = getUserBillsCollection();
-            const name = document.getElementById('bill-name').value.trim();
-            const rawAmount = document.getElementById('bill-amount').value;
-            const amount = rawAmount !== '' ? Number(rawAmount) : null;
-            const dueDate = document.getElementById('bill-date').value;
-            const isRecurring = document.getElementById('bill-recurring').checked;
-            if (!colRef || !name || !dueDate) return;
-
-            const isNewBill = !editingId;
-            let savedId = editingId;
-
-            if (editingId) {
-                await colRef.doc(editingId).update({ name, amount, dueDate, isRecurring });
-            } else {
-                const docRef = await colRef.add({
-                    name,
-                    amount,
-                    dueDate,
-                    isPaid: false,
-                    isRecurring,
-                    nextGenerated: false
-                });
-                savedId = docRef.id;
-            }
-
-            closeModal();
-
-            if (isNewBill) {
-                triggerCalendarOpen({ id: savedId, name, amount, dueDate });
-            }
-        }
-
-        async function deleteCurrentBill() {
-            const colRef = getUserBillsCollection();
-            if (!colRef || !editingId) return;
-            await colRef.doc(editingId).delete();
-            closeModal();
-        }
-
-        function getStartOfDay(dateObj) {
-            return new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate());
-        }
-
-        function parseLocalDate(isoDateStr) {
-            const [y, m, d] = isoDateStr.split('-').map(Number);
-            return new Date(y, m - 1, d);
-        }
-
-        function getDaysLeft(dueDateStr) {
-            const hoje = getStartOfDay(new Date());
-            const venc = parseLocalDate(dueDateStr);
-            return Math.round((venc - hoje) / (1000 * 60 * 60 * 24));
-        }
-
-        function getStatusInfo(bill) {
-            if (bill.isPaid) return { text: 'Paga', colorClass: 'text-green-600 dark:text-green-500' };
-            const n = getDaysLeft(bill.dueDate);
-            let text = n < -1 ? `Venceu há ${-n} dias` : n === -1 ? 'Venceu há 1 dia' : n === 0 ? 'Vence hoje' : n === 1 ? 'Vence amanhã' : `Vence em ${n} dias`;
-            let colorClass = n < 0 ? 'text-red-600 dark:text-red-500' : n <= 3 ? 'text-orange-500 dark:text-orange-400' : 'text-gray-500 dark:text-gray-400';
-            return { text, colorClass };
-        }
-
-        function formatShortDate(dueDateStr) {
-            return parseLocalDate(dueDateStr).toLocaleDateString('pt-BR', { day: 'numeric', month: 'short' }).replace('.', '');
-        }
-
-        function closeAllSwipes(exceptEl = null) {
-            document.querySelectorAll('.swipe-content').forEach(el => {
-                if (el !== exceptEl) {
-                    el.style.transform = 'translateX(0px)';
-                    el.dataset.open = 'false';
-                }
-            });
-        }
-
-        function attachSwipeGesture(container, contentEl) {
-            let startX = 0;
-            let startY = 0;
-            let currentX = 0;
-            let isSwiping = false;
-            const actionWidth = 76;
-
-            contentEl.addEventListener('touchstart', (e) => {
-                startX = e.touches[0].clientX;
-                startY = e.touches[0].clientY;
-                isSwiping = false;
-                contentEl.classList.add('swipe-dragging');
-            }, { passive: true });
-
-            contentEl.addEventListener('touchmove', (e) => {
-                const diffX = e.touches[0].clientX - startX;
-                const diffY = e.touches[0].clientY - startY;
-
-                if (!isSwiping && Math.abs(diffY) > Math.abs(diffX)) return;
-                
-                isSwiping = true;
-                closeAllSwipes(contentEl);
-
-                const isOpen = contentEl.dataset.open === 'true';
-                let translate = isOpen ? -actionWidth + diffX : diffX;
-
-                if (translate > 0) translate = 0;
-                if (translate < -actionWidth - 15) translate = -actionWidth - 15;
-
-                currentX = translate;
-                contentEl.style.transform = `translateX(${translate}px)`;
-            }, { passive: true });
-
-            contentEl.addEventListener('touchend', () => {
-                contentEl.classList.remove('swipe-dragging');
-                if (!isSwiping) return;
-
-                if (currentX < -38) {
-                    contentEl.style.transform = `translateX(-${actionWidth}px)`;
-                    contentEl.dataset.open = 'true';
-                } else {
-                    contentEl.style.transform = 'translateX(0px)';
-                    contentEl.dataset.open = 'false';
-                }
-            });
-        }
-
-        function buildBillRow(bill) {
-            const status = getStatusInfo(bill);
-
-            const wrapper = document.createElement('div');
-            wrapper.className = 'relative overflow-hidden bg-red-500';
-
-            const trashBtn = document.createElement('button');
-            trashBtn.type = 'button';
-            trashBtn.className = 'absolute inset-y-0 right-0 w-[76px] bg-red-500 active:bg-red-600 text-white flex items-center justify-center';
-            trashBtn.setAttribute('aria-label', 'Excluir');
-            trashBtn.onclick = () => deleteBillById(bill.id);
-            trashBtn.innerHTML = `
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-                </svg>
-            `;
-
-            const recurringBadge = bill.isRecurring
-                ? `<span class="inline-flex items-center gap-0.5 whitespace-nowrap text-[10px] font-semibold px-1.5 py-0.2 rounded bg-blue-500/10 text-[#007AFF]">↻ Mensal</span>`
-                : '';
-
-            const amountText = bill.amount != null && Number(bill.amount) > 0
-                ? `<span class="text-gray-600 dark:text-gray-300 font-semibold whitespace-nowrap">• ${formatBRL(bill.amount)}</span>`
-                : '';
-
-            const contentEl = document.createElement('div');
-            contentEl.className = 'swipe-content relative bg-white dark:bg-[#1C1C1E] flex items-center justify-between px-3.5 py-2.5 gap-1.5';
-            contentEl.dataset.open = 'false';
-            contentEl.innerHTML = `
-                <div class="min-w-0 flex-1">
-                    <div class="font-semibold text-[16px] leading-snug truncate ${bill.isPaid ? 'line-through text-gray-400 dark:text-gray-500' : ''}">
-                        ${escapeHTML(bill.name)}
-                    </div>
-                    <div class="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[12px] leading-tight mt-0.5">
-                        <span class="font-bold whitespace-nowrap ${status.colorClass}">${status.text}</span>
-                        <span class="text-gray-400 dark:text-gray-500 whitespace-nowrap">• ${formatShortDate(bill.dueDate)}</span>
-                        ${amountText}
-                        ${recurringBadge}
-                    </div>
-                </div>
-                <div class="flex items-center gap-0.5 shrink-0">
-                    <button type="button" onclick="exportBillToCalendar('${bill.id}')" aria-label="Adicionar ao calendário" class="p-1.5 text-gray-400 hover:text-gray-300 active:opacity-50">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-                        </svg>
-                    </button>
-                    <button type="button" onclick="openModal('${bill.id}')" aria-label="Editar" class="p-1.5 text-gray-400 hover:text-gray-300 active:opacity-50">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
-                        </svg>
-                    </button>
-                    <button type="button" onclick="togglePaid('${bill.id}')" 
-                        class="text-[13px] font-bold min-w-[82px] py-1 px-2.5 ml-0.5 rounded-full border-2 transition-colors active:scale-95
-                        ${bill.isPaid ? 'bg-green-600 border-green-600 text-white' : 'border-black dark:border-white text-black dark:text-white'}">
-                        ${bill.isPaid ? '✓ Paga' : 'Não paga'}
-                    </button>
-                </div>
-            `;
-
-            wrapper.appendChild(trashBtn);
-            wrapper.appendChild(contentEl);
-            attachSwipeGesture(wrapper, contentEl);
-            return wrapper;
-        }
-
-        function render() {
-            const groupedEl = document.getElementById('grouped-bills');
-            const emptyEl = document.getElementById('empty-state');
-            const emptyTextEl = document.getElementById('empty-text');
-            const bannerEl = document.getElementById('alert-banner');
-            const bannerTextEl = document.getElementById('alert-text');
-            const totalsCard = document.getElementById('totals-card');
-
-            const currentMonthKey = getOffsetMonthKey(0);
-            const prevMonth1Key = getOffsetMonthKey(-1);
-            const prevMonth2Key = getOffsetMonthKey(-2);
-            const historyMonthKeys = [prevMonth1Key, prevMonth2Key];
-
-            const byDueDate = (a, b) => parseLocalDate(a.dueDate) - parseLocalDate(b.dueDate);
-
-            const currentBills = bills.filter(b => {
-                if (!b.dueDate) return false;
-                const mKey = getMonthKeyFromDateStr(b.dueDate);
-                if (mKey === currentMonthKey) return true;
-                if (mKey < currentMonthKey && b.isRecurring && !b.isPaid) return true;
-                return false;
-            });
-
-            const historyBills = bills.filter(b => {
-                if (!b.dueDate) return false;
-                const mKey = getMonthKeyFromDateStr(b.dueDate);
-                return historyMonthKeys.includes(mKey);
-            });
-
-            const activeSet = currentPage === 'current' ? currentBills : historyBills;
-
-            const hasAnyAmount = activeSet.some(b => b.amount != null && Number(b.amount) > 0);
-            if (hasAnyAmount) {
-                const openItems = activeSet.filter(b => !b.isPaid);
-                const paidItems = activeSet.filter(b => b.isPaid);
-                const sumOpen = openItems.reduce((acc, b) => acc + (Number(b.amount) || 0), 0);
-                const sumPaid = paidItems.reduce((acc, b) => acc + (Number(b.amount) || 0), 0);
-                document.getElementById('total-open').textContent = formatBRL(sumOpen);
-                document.getElementById('total-paid').textContent = formatBRL(sumPaid);
-                totalsCard.classList.remove('hidden');
-            } else {
-                totalsCard.classList.add('hidden');
-            }
-
-            bannerEl.className = 'hidden rounded-xl p-3 flex items-center gap-2.5 font-semibold text-xs shadow-sm';
-            groupedEl.innerHTML = '';
-
-            if (currentPage === 'current') {
-                const open = currentBills.filter(b => !b.isPaid).sort(byDueDate);
-                const paid = currentBills.filter(b => b.isPaid).sort(byDueDate);
-
-                const late = open.filter(b => getDaysLeft(b.dueDate) < 0);
-                const soon = open.filter(b => {
-                    const d = getDaysLeft(b.dueDate);
-                    return d >= 0 && d <= 3;
-                });
-                const upcoming = open.filter(b => getDaysLeft(b.dueDate) > 3);
-
-                if (late.length > 0) {
-                    bannerEl.classList.remove('hidden');
-                    bannerEl.classList.add('bg-red-500/15', 'text-red-600', 'dark:text-red-400');
-                    bannerTextEl.textContent = late.length === 1 ? `1 conta atrasada: ${late[0].name}` : `${late.length} contas atrasadas`;
-                } else if (soon.length > 0) {
-                    bannerEl.classList.remove('hidden');
-                    bannerEl.classList.add('bg-orange-500/15', 'text-orange-600', 'dark:text-orange-400');
-                    bannerTextEl.textContent = soon.length === 1 ? `1 conta vence em breve: ${soon[0].name}` : `${soon.length} contas vencem em breve`;
-                }
-
-                if (currentBills.length === 0) {
-                    groupedEl.classList.add('hidden');
-                    emptyTextEl.innerHTML = 'Nenhuma conta neste mês.<br>Toque em <strong>+</strong> para começar.';
-                    emptyEl.classList.remove('hidden');
-                    return;
-                }
-
-                emptyEl.classList.add('hidden');
-                groupedEl.classList.remove('hidden');
-
-                const groups = [
-                    { title: 'Atrasadas', items: late, titleClass: 'text-red-600 dark:text-red-400' },
-                    { title: 'Vencem em breve', items: soon, titleClass: 'text-orange-600 dark:text-orange-400' },
-                    { title: 'Próximas', items: upcoming, titleClass: 'text-gray-500 dark:text-gray-400' },
-                    { title: 'Pagas', items: paid, titleClass: 'text-green-600 dark:text-green-500' }
-                ];
-
-                groups.forEach(group => {
-                    if (group.items.length === 0) return;
-
-                    const section = document.createElement('section');
-                    section.className = 'space-y-1';
-
-                    const heading = document.createElement('h2');
-                    heading.className = `px-1 text-[11px] font-bold uppercase tracking-wider ${group.titleClass}`;
-                    heading.textContent = `${group.title} (${group.items.length})`;
-
-                    const card = document.createElement('div');
-                    card.className = 'bg-white dark:bg-[#1C1C1E] rounded-2xl overflow-hidden divide-y divide-gray-200 dark:divide-gray-800 shadow-sm';
-
-                    group.items.forEach(bill => {
-                        card.appendChild(buildBillRow(bill));
-                    });
-
-                    section.appendChild(heading);
-                    section.appendChild(card);
-                    groupedEl.appendChild(section);
-                });
-            } else {
-                if (historyBills.length === 0) {
-                    groupedEl.classList.add('hidden');
-                    emptyTextEl.innerHTML = 'Nenhuma conta no histórico dos últimos 2 meses.';
-                    emptyEl.classList.remove('hidden');
-                    return;
-                }
-
-                emptyEl.classList.add('hidden');
-                groupedEl.classList.remove('hidden');
-
-                historyMonthKeys.forEach(mKey => {
-                    const monthItems = historyBills
-                        .filter(b => getMonthKeyFromDateStr(b.dueDate) === mKey)
-                        .sort(byDueDate);
-
-                    if (monthItems.length === 0) return;
-
-                    const section = document.createElement('section');
-                    section.className = 'space-y-1';
-
-                    const heading = document.createElement('h2');
-                    heading.className = 'px-1 text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400';
-                    heading.textContent = `${formatMonthLabel(mKey)} (${monthItems.length})`;
-
-                    const card = document.createElement('div');
-                    card.className = 'bg-white dark:bg-[#1C1C1E] rounded-2xl overflow-hidden divide-y divide-gray-200 dark:divide-gray-800 shadow-sm';
-
-                    monthItems.forEach(bill => {
-                        card.appendChild(buildBillRow(bill));
-                    });
-
-                    section.appendChild(heading);
-                    section.appendChild(card);
-                    groupedEl.appendChild(section);
-                });
-            }
-        }
-
-        function escapeHTML(str) {
-            const div = document.createElement('div');
-            div.textContent = str;
-            return div.innerHTML;
-        }
-    </script>
+    <div id="banner" class="banner hide">
+      <svg class="ic" viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+      <span id="ban-t"></span>
+    </div>
+    <div id="empty" class="hide"><p id="empty-t"></p></div>
+    <div id="list"></div>
+  </main>
+
+  <div class="fab"><button onclick="openModal()" aria-label="Nova conta"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button></div>
+</div>
+
+<!-- FOLHA DE CADASTRO / EDIÇÃO -->
+<div id="backdrop" class="hide" onclick="closeModal()"></div>
+<div id="sheet" class="hide"><div class="sh-in">
+  <div class="sh-hd">
+    <button onclick="closeModal()">Cancelar</button>
+    <h2 id="m-title">Nova conta</h2>
+    <button id="m-save" onclick="save()" disabled>Salvar</button>
+  </div>
+  <div class="sh-bd">
+    <div class="card">
+      <div class="f"><input id="b-name" placeholder="Nome da conta (ex: Luz, Internet)" oninput="validate()"></div>
+      <div class="f"><label for="b-amount">Valor (opcional)</label><input id="b-amount" class="fi" type="number" step="0.01" min="0" inputmode="decimal" placeholder="0,00" style="width:8rem"></div>
+      <div class="f"><label for="b-date">Vencimento</label><input id="b-date" class="fi" type="date" onchange="validate()"></div>
+      <label class="f" for="b-rec"><div>Repetir mensalmente<small>Cria a conta do próximo mês ao marcar como paga</small></div><input id="b-rec" class="tg" type="checkbox"></label>
+    </div>
+    <button id="m-cal" class="wide hide" onclick="calFromForm()">Adicionar vencimento ao Calendário</button>
+    <button id="m-del" class="wide d hide" onclick="del(editingId);closeModal()">Excluir conta</button>
+  </div>
+</div></div>
+
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js" crossorigin="anonymous"></script>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js" crossorigin="anonymous"></script>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js" crossorigin="anonymous"></script>
+<script>
+const FIREBASE_CONFIG={apiKey:"AIzaSyCXsXTkTOtkXHyge75SDkgfJ2VsPzAizH8",authDomain:"icontas-53234.firebaseapp.com",projectId:"icontas-53234",storageBucket:"icontas-53234.firebasestorage.app",messagingSenderId:"88307899128",appId:"1:88307899128:web:3b136e2ac877540580790d"};
+const $=id=>document.getElementById(id);
+let auth,db,user=null,bills=[],editingId=null,unsub=null,page='current',mode='login';
+
+/* ---------- utilidades ---------- */
+const BRL=v=>(Number(v)||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+const esc=s=>{const d=document.createElement('div');d.textContent=s;return d.innerHTML};
+const pad=n=>String(n).padStart(2,'0');
+const iso=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const parse=s=>{const[a,b,c]=s.split('-').map(Number);return new Date(a,b-1,c)};
+const daysLeft=s=>Math.round((parse(s)-new Date(new Date().setHours(0,0,0,0)))/864e5);
+const mkey=s=>s.slice(0,7);
+const offKey=o=>{const n=new Date();return iso(new Date(n.getFullYear(),n.getMonth()+o,1)).slice(0,7)};
+const monthLabel=k=>{const[y,m]=k.split('-').map(Number);return new Date(y,m-1,1).toLocaleDateString('pt-BR',{month:'long',year:'numeric'})};
+const shortDate=s=>parse(s).toLocaleDateString('pt-BR',{day:'numeric',month:'short'}).replace('.','');
+function addMonth(s,day){const[y,m]=s.split('-').map(Number);const last=new Date(y,m+1,0).getDate();return iso(new Date(y,m,Math.min(day,last)))}
+function toast(msg,err){const t=$('toast');t.textContent=msg;t.className='toast'+(err?' err':'');clearTimeout(toast.t);toast.t=setTimeout(()=>t.className='hide',4000)}
+async function run(fn){try{await fn()}catch(e){toast(e&&e.code=='permission-denied'?'Sem permissão para salvar.':'Não foi possível concluir. Verifique a conexão e tente de novo.',1)}}
+
+/* ---------- login ---------- */
+function setMode(m){mode=m;const s=m=='signup';
+  $('sub').textContent=s?'Crie sua conta para organizar suas contas':'Faça login para acessar suas contas';
+  $('name-row').classList.toggle('hide',!s);$('forgot').classList.toggle('hide',s);
+  $('pass').autocomplete=s?'new-password':'current-password';
+  $('pass').placeholder=s?'Crie uma senha (mín. 6 caracteres)':'Senha';
+  $('go').textContent=s?'Criar conta':'Entrar';
+  $('toggle').textContent=s?'Já tenho conta. Fazer login':'Primeiro acesso? Criar conta';
+  $('err').classList.add('hide')}
+function authMsg(c){c=String(c||'');
+  if(/email-already/.test(c))return'Este e-mail já possui cadastro. Toque em "Já tenho conta".';
+  if(/weak-password/.test(c))return'A senha precisa ter pelo menos 6 caracteres.';
+  if(/invalid-email/.test(c))return'Digite um e-mail válido.';
+  if(/invalid-credential|wrong-password|user-not-found/.test(c))return'E-mail ou senha incorretos.';
+  if(/too-many/.test(c))return'Muitas tentativas. Aguarde um pouco e tente de novo.';
+  if(/network/.test(c))return'Sem conexão com a internet.';
+  return'Não foi possível concluir. Tente novamente.'}
+async function submitAuth(e){e.preventDefault();
+  const em=$('email').value.trim(),pw=$('pass').value,nm=$('name').value.trim(),err=$('err');
+  err.classList.add('hide');$('go').disabled=true;
+  try{
+    if(mode=='signup'){
+      const c=await auth.createUserWithEmailAndPassword(em,pw);
+      if(nm){await c.user.updateProfile({displayName:nm});greet(auth.currentUser)}
+    }else await auth.signInWithEmailAndPassword(em,pw);
+  }catch(x){err.textContent=authMsg(x.code);err.classList.remove('hide')}
+  $('go').disabled=false}
+async function forgot(){const em=$('email').value.trim();
+  if(!em){$('err').textContent='Digite seu e-mail acima e toque em "Esqueci minha senha".';$('err').classList.remove('hide');return}
+  try{await auth.sendPasswordResetEmail(em);$('err').classList.add('hide');toast('Se o e-mail estiver cadastrado, enviamos um link para redefinir a senha.')}
+  catch(x){$('err').textContent=authMsg(x.code);$('err').classList.remove('hide')}}
+function logout(){if(auth)auth.signOut()}
+function greet(u){let n=(u.displayName||'').trim();
+  if(!n&&u.email){n=u.email.split('@')[0].replace(/[._-]+/g,' ').trim();n=n.charAt(0).toUpperCase()+n.slice(1)}
+  $('greet').textContent='Olá '+(n||'Usuário')+'.'}
+const col=()=>user&&db.collection('users').doc(user.uid).collection('bills');
+function onUser(u){user=u;if(unsub){unsub();unsub=null}
+  if(u){greet(u);$('login').classList.add('hide');$('app').classList.remove('hide');
+    unsub=col().onSnapshot(s=>{bills=s.docs.map(d=>({id:d.id,...d.data()}));render()},()=>toast('Erro ao carregar suas contas.',1))
+  }else{bills=[];$('app').classList.add('hide');$('login').classList.remove('hide');render()}}
+
+/* ---------- calendário ---------- */
+const icsEsc=s=>String(s||'').replace(/\\/g,'\\\\').replace(/;/g,'\\;').replace(/,/g,'\\,').replace(/\n/g,'\\n');
+function calendar(b){
+  if(!b||!b.name||!b.dueDate)return;
+  const st=b.dueDate.replace(/-/g,''),nx=parse(b.dueDate);nx.setDate(nx.getDate()+1);
+  const en=iso(nx).replace(/-/g,''),desc=Number(b.amount)>0?`Valor: ${BRL(b.amount)}`:'Lembrete de vencimento de conta';
+  const ios=/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+  if(ios){
+    const ics=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Contas a vencer//PT','BEGIN:VEVENT',`UID:${b.id||Date.now()}-${st}@contas`,
+      `DTSTAMP:${new Date().toISOString().replace(/[-:]/g,'').split('.')[0]}Z`,`DTSTART;VALUE=DATE:${st}`,`DTEND;VALUE=DATE:${en}`,
+      `SUMMARY:${icsEsc('Vencimento: '+b.name)}`,`DESCRIPTION:${icsEsc(desc)}`,'BEGIN:VALARM','ACTION:DISPLAY',
+      `DESCRIPTION:${icsEsc('Vencimento hoje: '+b.name)}`,'TRIGGER:PT9H','END:VALARM','END:VEVENT','END:VCALENDAR'].join('\r\n');
+    const url=URL.createObjectURL(new Blob([ics],{type:'text/calendar;charset=utf-8'})),a=document.createElement('a');
+    a.href=url;a.download='vencimento.ics';a.style.display='none';document.body.appendChild(a);a.click();
+    setTimeout(()=>{a.remove();URL.revokeObjectURL(url)},1000);
+  }else{
+    const p=new URLSearchParams({action:'TEMPLATE',text:'Vencimento: '+b.name,dates:`${st}/${en}`,details:desc});
+    window.open('https://calendar.google.com/calendar/render?'+p,'_blank','noopener,noreferrer')}
+  toast(`Evento de "${b.name}" enviado para o Calendário.`)}
+function calFromForm(){const name=$('b-name').value.trim(),dueDate=$('b-date').value,r=$('b-amount').value;
+  if(name&&dueDate)calendar({id:editingId,name,amount:r!==''?Number(r):null,dueDate})}
+
+/* ---------- ações ---------- */
+function togglePaid(id){run(async()=>{
+  const b=bills.find(x=>x.id==id);if(!b)return;const c=col();
+  if(!b.isPaid&&b.isRecurring&&!b.nextGenerated&&!bills.some(x=>x.id==id+'_n')){
+    const day=b.recurDay||parse(b.dueDate).getDate();let next=addMonth(b.dueDate,day);
+    while(mkey(next)<offKey(0))next=addMonth(next,day);
+    const batch=db.batch();
+    batch.update(c.doc(id),{isPaid:true,nextGenerated:true});
+    batch.set(c.doc(id+'_n'),{name:b.name,amount:b.amount??null,dueDate:next,isPaid:false,isRecurring:true,recurDay:day,nextGenerated:false});
+    await batch.commit();toast(`Próxima "${b.name}" criada para ${shortDate(next)}.`);
+  }else await c.doc(id).update({isPaid:!b.isPaid})})}
+function del(id){if(id&&confirm('Excluir esta conta?'))run(()=>col().doc(id).delete())}
+function validate(){$('m-save').disabled=!($('b-name').value.trim()&&$('b-date').value)}
+function openModal(id){closeSwipes();clearTimeout(closeModal.t);editingId=id||null;
+  const b=id?bills.find(x=>x.id==id):null;
+  $('m-title').textContent=b?'Editar conta':'Nova conta';
+  $('b-name').value=b?b.name:'';$('b-amount').value=b&&b.amount!=null?b.amount:'';
+  if(b)$('b-date').value=b.dueDate;else{const d=new Date();d.setDate(d.getDate()+3);$('b-date').value=iso(d)}
+  $('b-rec').checked=!!(b&&b.isRecurring);
+  $('m-cal').classList.toggle('hide',!b);$('m-del').classList.toggle('hide',!b);validate();
+  $('backdrop').classList.remove('hide');$('sheet').classList.remove('hide');void $('sheet').offsetWidth;
+  $('backdrop').classList.add('on');$('sheet').classList.add('open');
+  setTimeout(()=>$('b-name').focus(),150)}
+function closeModal(){$('backdrop').classList.remove('on');$('sheet').classList.remove('open');
+  closeModal.t=setTimeout(()=>{$('backdrop').classList.add('hide');$('sheet').classList.add('hide')},300)}
+function save(){
+  const name=$('b-name').value.trim(),dueDate=$('b-date').value,raw=$('b-amount').value;
+  if(!name||!dueDate)return;
+  const data={name,amount:raw!==''?Number(raw):null,dueDate,isRecurring:$('b-rec').checked,recurDay:parse(dueDate).getDate()};
+  const id=editingId;closeModal();
+  run(async()=>{if(id)await col().doc(id).update(data);else await col().add({...data,isPaid:false,nextGenerated:false})})}
+
+/* ---------- arrastar para excluir ---------- */
+function closeSwipes(except){document.querySelectorAll('.sw').forEach(e=>{if(e!==except){e.style.transform='';e.dataset.open=''}})}
+function swipe(el){const W=76;let sx=0,sy=0,cx=0,on=false;
+  el.addEventListener('touchstart',e=>{sx=e.touches[0].clientX;sy=e.touches[0].clientY;on=false},{passive:true});
+  el.addEventListener('touchmove',e=>{
+    const dx=e.touches[0].clientX-sx,dy=e.touches[0].clientY-sy;
+    if(!on){if(Math.abs(dy)>Math.abs(dx)||Math.abs(dx)<6)return;on=true;closeSwipes(el);el.style.transition='none'}
+    cx=Math.max(-W-15,Math.min(0,(el.dataset.open?-W:0)+dx));el.style.transform=`translateX(${cx}px)`},{passive:true});
+  const end=()=>{el.style.transition='';if(!on)return;on=false;const o=cx<-38;
+    el.style.transform=o?`translateX(-${W}px)`:'';el.dataset.open=o?'1':''};
+  el.addEventListener('touchend',end);el.addEventListener('touchcancel',end)}
+
+/* ---------- tela ---------- */
+const IC={
+  trash:'<svg class="ic" viewBox="0 0 24 24"><path d="M19 7l-.9 12.1A2 2 0 0 1 16.1 21H7.9a2 2 0 0 1-2-1.9L5 7m5 4v6m4-6v6m1-10V4a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v3M4 7h16"/></svg>',
+  cal:'<svg class="ic" viewBox="0 0 24 24"><path d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2z"/></svg>',
+  edit:'<svg class="ic" viewBox="0 0 24 24"><path d="M15.2 5.2l3.6 3.6m-2-5a2.5 2.5 0 1 1 3.5 3.5L6.5 21H3v-3.6L16.7 3.7z"/></svg>'};
+function status(b){if(b.isPaid)return['Paga','grn'];const n=daysLeft(b.dueDate);
+  return[n<-1?`Venceu há ${-n} dias`:n==-1?'Venceu há 1 dia':n==0?'Vence hoje':n==1?'Vence amanhã':`Vence em ${n} dias`,n<0?'red':n<=3?'org':'mut']}
+function row(b){const[st,cl]=status(b),w=document.createElement('div');w.className='row-w';
+  w.innerHTML=`<button class="trash" data-act="del" data-id="${b.id}" aria-label="Excluir">${IC.trash}</button>
+  <div class="sw ${b.isPaid?'paid':''}"><div class="info"><div class="nm">${esc(b.name)}</div>
+  <div class="meta"><span class="${cl}" style="font-weight:700">${st}</span><span class="mut">• ${shortDate(b.dueDate)}</span>
+  ${Number(b.amount)>0?`<span style="font-weight:600">• ${BRL(b.amount)}</span>`:''}${b.isRecurring?'<span class="rec">↻ Mensal</span>':''}</div></div>
+  <div class="acts"><button class="ib" data-act="cal" data-id="${b.id}" aria-label="Adicionar ao calendário">${IC.cal}</button>
+  <button class="ib" data-act="edit" data-id="${b.id}" aria-label="Editar">${IC.edit}</button>
+  <button class="pay ${b.isPaid?'on':''}" data-act="pay" data-id="${b.id}">${b.isPaid?'✓ Paga':'Não paga'}</button></div></div>`;
+  swipe(w.querySelector('.sw'));return w}
+function section(title,items,cls){if(!items.length)return;
+  const s=document.createElement('section'),c=document.createElement('div');
+  s.innerHTML=`<h2 class="${cls}">${esc(title)} (${items.length})</h2>`;c.className='card';
+  items.forEach(b=>c.appendChild(row(b)));s.appendChild(c);$('list').appendChild(s)}
+function switchPage(p){page=p;$('tab-c').className='tab'+(p=='current'?' on':'');$('tab-h').className='tab'+(p=='history'?' on':'');
+  $('title').textContent=p=='current'?'Contas a vencer':'Histórico';render()}
+$('list').addEventListener('click',e=>{const t=e.target.closest('[data-act]');if(!t)return;const{act,id}=t.dataset;
+  if(act=='del')del(id);else if(act=='cal')calendar(bills.find(b=>b.id==id));else if(act=='edit')openModal(id);else if(act=='pay')togglePaid(id)});
+function render(){
+  const cur=offKey(0),hist=[offKey(-1),offKey(-2)],by=(a,b)=>parse(a.dueDate)-parse(b.dueDate),ban=$('banner');
+  const ok=bills.filter(b=>b.dueDate);
+  const curB=ok.filter(b=>mkey(b.dueDate)==cur||(mkey(b.dueDate)<cur&&!b.isPaid));
+  const hisB=ok.filter(b=>hist.includes(mkey(b.dueDate)));
+  const act=page=='current'?curB:hisB,has=act.some(b=>Number(b.amount)>0);
+  $('totals').classList.toggle('hide',!has);
+  if(has){const sum=f=>act.filter(f).reduce((a,b)=>a+(Number(b.amount)||0),0);
+    $('t-open').textContent=BRL(sum(b=>!b.isPaid));$('t-paid').textContent=BRL(sum(b=>b.isPaid))}
+  ban.className='banner hide';$('list').innerHTML='';
+  if(page=='current'){
+    const open=curB.filter(b=>!b.isPaid).sort(by),paid=curB.filter(b=>b.isPaid).sort(by);
+    const late=open.filter(b=>daysLeft(b.dueDate)<0),soon=open.filter(b=>{const d=daysLeft(b.dueDate);return d>=0&&d<=3}),up=open.filter(b=>daysLeft(b.dueDate)>3);
+    if(late.length){ban.className='banner red-bg';$('ban-t').textContent=late.length==1?`1 conta atrasada: ${late[0].name}`:`${late.length} contas atrasadas`}
+    else if(soon.length){ban.className='banner org-bg';$('ban-t').textContent=soon.length==1?`1 conta vence em breve: ${soon[0].name}`:`${soon.length} contas vencem em breve`}
+    $('empty-t').innerHTML='Nenhuma conta neste mês.<br>Toque em <b>+</b> para começar.';
+    $('empty').classList.toggle('hide',curB.length>0);
+    section('Atrasadas',late,'red');section('Vencem em breve',soon,'org');section('Próximas',up,'mut');section('Pagas',paid,'grn');
+  }else{
+    $('empty-t').textContent='Nenhuma conta no histórico dos últimos 2 meses.';
+    $('empty').classList.toggle('hide',hisB.length>0);
+    hist.forEach(k=>section(monthLabel(k),hisB.filter(b=>mkey(b.dueDate)==k).sort(by),'mut'))}}
+
+/* ---------- início ---------- */
+try{
+  firebase.initializeApp(FIREBASE_CONFIG);auth=firebase.auth();db=firebase.firestore();
+  db.enablePersistence({synchronizeTabs:true}).catch(()=>{});
+  auth.onAuthStateChanged(onUser);
+}catch(e){$('login').classList.remove('hide');toast('Não foi possível iniciar. Verifique a conexão com a internet.',1)}
+if('serviceWorker' in navigator)addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
+</script>
 </body>
 </html>
