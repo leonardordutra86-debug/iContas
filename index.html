@@ -29,13 +29,27 @@
         .swipe-dragging { transition: none !important; }
     </style>
 
-    <!-- Garante handleLogin disponível desde o primeiro instante -->
     <script>
-        window._authReady = false;
-        window._queuedLogin = null;
+        const FIREBASE_CONFIG = {
+            apiKey: "AIzaSyCXsXTkTOtkXHyge75SDkgfJ2VsPzAizH8",
+            authDomain: "icontas-53234.firebaseapp.com",
+            projectId: "icontas-53234",
+            storageBucket: "icontas-53234.firebasestorage.app",
+            messagingSenderId: "88307899128",
+            appId: "1:88307899128:web:3b136e2ac877540580790d"
+        };
 
-        window.handleLogin = function(e) {
+        window.onerror = function(msg) {
+            const box = document.getElementById('fatal-error');
+            if (box) {
+                box.textContent = 'Erro no código: ' + msg;
+                box.classList.remove('hidden');
+            }
+        };
+
+        window.handleLogin = async function(e) {
             if (e && e.preventDefault) e.preventDefault();
+
             const emailEl = document.getElementById('login-email');
             const passEl = document.getElementById('login-password');
             const errorEl = document.getElementById('login-error');
@@ -44,26 +58,50 @@
             const email = emailEl ? emailEl.value.trim() : '';
             const password = passEl ? passEl.value : '';
 
-            if (!window._authReady) {
-                window._queuedLogin = { email, password };
+            if (!email || !password) return;
+
+            if (errorEl) errorEl.classList.add('hidden');
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = 'Entrando...';
+            }
+
+            try {
+                if (window.auth && typeof window.auth.signInWithEmailAndPassword === 'function') {
+                    await window.auth.signInWithEmailAndPassword(email, password);
+                } else {
+                    const res = await fetch(
+                        `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${FIREBASE_CONFIG.apiKey}`,
+                        {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ email, password, returnSecureToken: true })
+                        }
+                    );
+                    const data = await res.json();
+                    if (!res.ok) {
+                        const code = data?.error?.message || 'INVALID_LOGIN_CREDENTIALS';
+                        throw new Error(code);
+                    }
+                    window.currentUser = {
+                        uid: data.localId,
+                        email: data.email,
+                        displayName: data.displayName || ''
+                    };
+                    if (typeof window.onAuthenticatedUser === 'function') {
+                        window.onAuthenticatedUser(window.currentUser);
+                    }
+                }
+            } catch (err) {
                 if (errorEl) {
-                    errorEl.textContent = 'Iniciando Firebase... aguarde 1 segundo e tente novamente.';
+                    errorEl.textContent = `Falha no login (${err.code || err.message || 'erro'})`;
                     errorEl.classList.remove('hidden');
                 }
-                if (btn) btn.disabled = false;
-                return;
-            }
-
-            if (typeof window._performFirebaseLogin === 'function') {
-                window._performFirebaseLogin(email, password);
-            }
-        };
-
-        window.onerror = function(msg) {
-            const box = document.getElementById('fatal-error');
-            if (box) {
-                box.textContent = 'Erro no código: ' + msg;
-                box.classList.remove('hidden');
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = 'Entrar';
+                }
             }
         };
     </script>
@@ -214,45 +252,23 @@
         </div>
     </div>
 
-    <!-- Firebase SDK Compat (Auth + Firestore) -->
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 
     <script>
-        const firebaseConfig = {
-            apiKey: "AIzaSyCXsXTkTOtkXHyge75SDkgfJ2VsPzAizH8",
-            authDomain: "icontas-53234.firebaseapp.com",
-            projectId: "icontas-53234",
-            storageBucket: "icontas-53234.firebasestorage.app",
-            messagingSenderId: "88307899128",
-            appId: "1:88307899128:web:3b136e2ac877540580790d"
-        };
+        window.auth = null;
+        window.db = null;
+        window.currentUser = null;
 
-        let auth = null;
-        let db = null;
-
-        try {
-            if (!firebase.apps.length) {
-                firebase.initializeApp(firebaseConfig);
-            }
-            auth = firebase.auth();
-            db = firebase.firestore();
-        } catch (err) {
-            const box = document.getElementById('fatal-error');
-            box.textContent = 'Erro ao iniciar Firebase: ' + err.message;
-            box.classList.remove('hidden');
-        }
-
-        let currentUser = null;
         let bills = [];
         let editingId = null;
         let unsubscribeBills = null;
         let currentPage = 'current';
 
         function getUserBillsCollection() {
-            if (!db || !currentUser) return null;
-            return db.collection("users").doc(currentUser.uid).collection("bills");
+            if (!window.db || !window.currentUser) return null;
+            return window.db.collection("users").doc(window.currentUser.uid).collection("bills");
         }
 
         function formatUserName(user) {
@@ -400,67 +416,45 @@
             return d.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
         }
 
-        window._performFirebaseLogin = async function(email, password) {
-            const errorEl = document.getElementById('login-error');
-            const btn = document.getElementById('login-btn');
-
-            if (!auth) {
-                if (errorEl) {
-                    errorEl.textContent = 'Firebase não inicializado.';
-                    errorEl.classList.remove('hidden');
-                }
-                return;
-            }
-
-            if (errorEl) errorEl.classList.add('hidden');
-            if (btn) {
-                btn.disabled = true;
-                btn.textContent = 'Entrando...';
-            }
-
-            try {
-                await auth.signInWithEmailAndPassword(email, password);
-            } catch (err) {
-                if (errorEl) {
-                    errorEl.textContent = `Falha no login (${err.code || 'erro'})`;
-                    errorEl.classList.remove('hidden');
-                }
-            } finally {
-                if (btn) {
-                    btn.disabled = false;
-                    btn.textContent = 'Entrar';
-                }
+        window.onAuthenticatedUser = function(user) {
+            window.currentUser = user;
+            if (user) {
+                document.getElementById('user-greeting').textContent = `Olá ${formatUserName(user)}.`;
+                document.getElementById('login-screen').classList.add('hidden');
+                document.getElementById('app-screen').classList.remove('hidden');
+                startListeningBills();
+            } else {
+                if (unsubscribeBills) { unsubscribeBills(); unsubscribeBills = null; }
+                bills = [];
+                render();
+                document.getElementById('app-screen').classList.add('hidden');
+                document.getElementById('login-screen').classList.remove('hidden');
             }
         };
 
-        if (auth) {
-            window._authReady = true;
-
-            if (window._queuedLogin && window._queuedLogin.email && window._queuedLogin.password) {
-                const { email, password } = window._queuedLogin;
-                window._queuedLogin = null;
-                window._performFirebaseLogin(email, password);
-            }
-
-            auth.onAuthStateChanged((user) => {
-                currentUser = user;
-                if (user) {
-                    document.getElementById('user-greeting').textContent = `Olá ${formatUserName(user)}.`;
-                    document.getElementById('login-screen').classList.add('hidden');
-                    document.getElementById('app-screen').classList.remove('hidden');
-                    startListeningBills();
-                } else {
-                    if (unsubscribeBills) { unsubscribeBills(); unsubscribeBills = null; }
-                    bills = [];
-                    render();
-                    document.getElementById('app-screen').classList.add('hidden');
-                    document.getElementById('login-screen').classList.remove('hidden');
+        try {
+            if (typeof firebase !== 'undefined') {
+                if (!firebase.apps.length) {
+                    firebase.initializeApp(FIREBASE_CONFIG);
                 }
-            });
+                window.auth = firebase.auth();
+                window.db = firebase.firestore();
+
+                window.auth.onAuthStateChanged((user) => {
+                    window.onAuthenticatedUser(user);
+                });
+            }
+        } catch (err) {
+            const box = document.getElementById('fatal-error');
+            if (box) {
+                box.textContent = 'Aviso Firebase: ' + err.message;
+                box.classList.remove('hidden');
+            }
         }
 
         async function handleLogout() {
-            if (auth) await auth.signOut();
+            if (window.auth) await window.auth.signOut();
+            window.onAuthenticatedUser(null);
         }
 
         function startListeningBills() {
@@ -847,4 +841,75 @@
                 const groups = [
                     { title: 'Atrasadas', items: late, titleClass: 'text-red-600 dark:text-red-400' },
                     { title: 'Vencem em breve', items: soon, titleClass: 'text-orange-600 dark:text-orange-400' },
-                    { title: 'Próximas', items: upcoming, titleClass: '
+                    { title: 'Próximas', items: upcoming, titleClass: 'text-gray-500 dark:text-gray-400' },
+                    { title: 'Pagas', items: paid, titleClass: 'text-green-600 dark:text-green-500' }
+                ];
+
+                groups.forEach(group => {
+                    if (group.items.length === 0) return;
+
+                    const section = document.createElement('section');
+                    section.className = 'space-y-1';
+
+                    const heading = document.createElement('h2');
+                    heading.className = `px-1 text-[11px] font-bold uppercase tracking-wider ${group.titleClass}`;
+                    heading.textContent = `${group.title} (${group.items.length})`;
+
+                    const card = document.createElement('div');
+                    card.className = 'bg-white dark:bg-[#1C1C1E] rounded-2xl overflow-hidden divide-y divide-gray-200 dark:divide-gray-800 shadow-sm';
+
+                    group.items.forEach(bill => {
+                        card.appendChild(buildBillRow(bill));
+                    });
+
+                    section.appendChild(heading);
+                    section.appendChild(card);
+                    groupedEl.appendChild(section);
+                });
+            } else {
+                if (historyBills.length === 0) {
+                    groupedEl.classList.add('hidden');
+                    emptyTextEl.innerHTML = 'Nenhuma conta no histórico dos últimos 2 meses.';
+                    emptyEl.classList.remove('hidden');
+                    return;
+                }
+
+                emptyEl.classList.add('hidden');
+                groupedEl.classList.remove('hidden');
+
+                historyMonthKeys.forEach(mKey => {
+                    const monthItems = historyBills
+                        .filter(b => getMonthKeyFromDateStr(b.dueDate) === mKey)
+                        .sort(byDueDate);
+
+                    if (monthItems.length === 0) return;
+
+                    const section = document.createElement('section');
+                    section.className = 'space-y-1';
+
+                    const heading = document.createElement('h2');
+                    heading.className = 'px-1 text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400';
+                    heading.textContent = `${formatMonthLabel(mKey)} (${monthItems.length})`;
+
+                    const card = document.createElement('div');
+                    card.className = 'bg-white dark:bg-[#1C1C1E] rounded-2xl overflow-hidden divide-y divide-gray-200 dark:divide-gray-800 shadow-sm';
+
+                    monthItems.forEach(bill => {
+                        card.appendChild(buildBillRow(bill));
+                    });
+
+                    section.appendChild(heading);
+                    section.appendChild(card);
+                    groupedEl.appendChild(section);
+                });
+            }
+        }
+
+        function escapeHTML(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>
