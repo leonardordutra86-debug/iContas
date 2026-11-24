@@ -201,7 +201,10 @@ function authMsg(c){c=String(c||'');
   if(/invalid-credential|wrong-password|user-not-found/.test(c))return'E-mail ou senha incorretos.';
   if(/too-many/.test(c))return'Muitas tentativas. Aguarde um pouco e tente de novo.';
   if(/network/.test(c))return'Sem conexão com a internet.';
-  return'Não foi possível concluir. Tente novamente.'}
+  if(/referer|api-key|key-not-valid/.test(c))return'Este site está bloqueado pela chave de API. Confira as restrições da chave no Google Cloud ('+c+').';
+  if(/operation-not-allowed/.test(c))return'Login por e-mail/senha não está ativado no Firebase ('+c+').';
+  if(/unauthorized-domain/.test(c))return'Este domínio não está autorizado no Firebase ('+c+').';
+  return'Não foi possível concluir ('+(c||'erro')+'). Tente novamente.'}
 async function submitAuth(e){e.preventDefault();
   const em=$('email').value.trim(),pw=$('pass').value,nm=$('name').value.trim(),err=$('err');
   err.classList.add('hide');$('go').disabled=true;
