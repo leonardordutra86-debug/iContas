@@ -387,6 +387,11 @@
             return num.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
         }
 
+        function isIOSDevice() {
+            return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+                (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        }
+
         function formatCalDate(isoDateStr) {
             return isoDateStr.replace(/-/g, '');
         }
@@ -398,6 +403,46 @@
             const m = String(d.getMonth() + 1).padStart(2, '0');
             const day = String(d.getDate()).padStart(2, '0');
             return `${y}${m}${day}`;
+        }
+
+        function escapeICSText(str) {
+            return String(str || '')
+                .replace(/\\/g, '\\\\')
+                .replace(/;/g, '\\;')
+                .replace(/,/g, '\\,')
+                .replace(/\n/g, '\\n');
+        }
+
+        function buildICSContentForBill(bill) {
+            const startICS = formatCalDate(bill.dueDate);
+            const endICS = getNextDayCalDate(bill.dueDate);
+            const nowStamp = new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+
+            const amountLine = bill.amount != null && Number(bill.amount) > 0
+                ? `Valor: ${formatBRL(bill.amount)}`
+                : 'Lembrete de vencimento de conta';
+
+            return [
+                'BEGIN:VCALENDAR',
+                'VERSION:2.0',
+                'PRODID:-//Contas a vencer//PWA//PT',
+                'CALSCALE:GREGORIAN',
+                'METHOD:PUBLISH',
+                'BEGIN:VEVENT',
+                `UID:${bill.id || Date.now()}-${startICS}@contas-pwa`,
+                `DTSTAMP:${nowStamp}`,
+                `DTSTART;VALUE=DATE:${startICS}`,
+                `DTEND;VALUE=DATE:${endICS}`,
+                `SUMMARY:${escapeICSText(`Vencimento: ${bill.name}`)}`,
+                `DESCRIPTION:${escapeICSText(amountLine)}`,
+                'BEGIN:VALARM',
+                'ACTION:DISPLAY',
+                `DESCRIPTION:${escapeICSText(`Vencimento hoje: ${bill.name}`)}`,
+                'TRIGGER:PT9H',
+                'END:VALARM',
+                'END:VEVENT',
+                'END:VCALENDAR'
+            ].join('\r\n');
         }
 
         function buildGoogleCalendarURL(bill) {
@@ -420,6 +465,26 @@
 
         function triggerCalendarOpen(bill) {
             if (!bill || !bill.name || !bill.dueDate) return;
+
+            if (isIOSDevice()) {
+                const icsContent = buildICSContentForBill(bill);
+                const safeSlug = bill.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'conta';
+                const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `vencimento-${safeSlug}.ics`;
+                link.style.display = 'none';
+                document.body.appendChild(link);
+                link.click();
+                setTimeout(() => {
+                    document.body.removeChild(link);
+                    URL.revokeObjectURL(url);
+                }, 1000);
+                showToast(`Evento de "${bill.name}" enviado para o Calendário.`);
+                return;
+            }
+
             const url = buildGoogleCalendarURL(bill);
             window.open(url, '_blank', 'noopener,noreferrer');
             showToast(`Evento de "${bill.name}" aberto no Calendário.`);
