@@ -1,345 +1,1056 @@
-import SwiftUI
-import Combine
-import UserNotifications
-
-// MARK: - Modelo
-
-struct Bill: Identifiable, Codable {
-    var id = UUID()
-    var name: String
-    var dueDate: Date
-    var isPaid: Bool = false
-
-    // Quantos dias faltam (negativo = atrasada)
-    var daysLeft: Int {
-        let cal = Calendar.current
-        let hoje = cal.startOfDay(for: Date())
-        let venc = cal.startOfDay(for: dueDate)
-        return cal.dateComponents([.day], from: hoje, to: venc).day ?? 0
-    }
-
-    var statusText: String {
-        if isPaid { return "Paga" }
-        let n = daysLeft
-        if n < -1 { return "Venceu há \(-n) dias" }
-        if n == -1 { return "Venceu há 1 dia" }
-        if n == 0 { return "Vence hoje" }
-        if n == 1 { return "Vence amanhã" }
-        return "Vence em \(n) dias"
-    }
-
-    var statusColor: Color {
-        if isPaid { return .green }
-        if daysLeft < 0 { return .red }
-        if daysLeft <= 3 { return .orange }
-        return .secondary
-    }
-}
-
-// MARK: - Dados, salvamento e notificações
-
-final class BillStore: ObservableObject {
-    @Published var bills: [Bill] = [] {
-        didSet { save() }
-    }
-
-    private let key = "contas-v1"
-
-    init() { load() }
-
-    // Não pagas primeiro, depois por data de vencimento
-    var sorted: [Bill] {
-        bills.sorted { a, b in
-            if a.isPaid != b.isPaid { return !a.isPaid }
-            return a.dueDate < b.dueDate
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="Contas">
+    
+    <link rel="apple-touch-icon" href="icon.png">
+    <title>Contas a vencer</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = { darkMode: 'media' }
+    </script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
+            -webkit-tap-highlight-color: transparent;
+            padding-top: env(safe-area-inset-top);
+            padding-bottom: env(safe-area-inset-bottom);
+            overscroll-behavior-x: none;
         }
-    }
+        .sheet-enter { transform: translateY(100%); transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1); }
+        .sheet-open { transform: translateY(0); }
+        .swipe-content { transition: transform 0.25s cubic-bezier(0.25, 1, 0.5, 1); }
+        .swipe-dragging { transition: none !important; }
+    </style>
 
-    // Aviso no topo da tela
-    var banner: (text: String, color: Color)? {
-        let open = bills.filter { !$0.isPaid }
-        let late = open.filter { $0.daysLeft < 0 }
-        if !late.isEmpty {
-            let t = late.count == 1 ? "1 conta atrasada: \(late[0].name)" : "\(late.count) contas atrasadas"
-            return (t, .red)
+    <script>
+        const FIREBASE_CONFIG = {
+            apiKey: "AIzaSyCXsXTkTOtkXHyge75SDkgfJ2VsPzAizH8",
+            authDomain: "icontas-53234.firebaseapp.com",
+            projectId: "icontas-53234",
+            storageBucket: "icontas-53234.firebasestorage.app",
+            messagingSenderId: "88307899128",
+            appId: "1:88307899128:web:3b136e2ac877540580790d"
+        };
+
+        window._authMode = 'login';
+
+        window.onerror = function(msg) {
+            const box = document.getElementById('fatal-error');
+            if (box) {
+                box.textContent = 'Erro no código: ' + msg;
+                box.classList.remove('hidden');
+            }
+        };
+
+        window.toggleAuthMode = function() {
+            window._authMode = window._authMode === 'login' ? 'signup' : 'login';
+            const isSignup = window._authMode === 'signup';
+
+            const subtitle = document.getElementById('auth-subtitle');
+            const nameWrapper = document.getElementById('signup-name-wrapper');
+            const nameInput = document.getElementById('login-name');
+            const passInput = document.getElementById('login-password');
+            const submitBtn = document.getElementById('login-btn');
+            const toggleBtn = document.getElementById('toggle-auth-btn');
+            const errorEl = document.getElementById('login-error');
+
+            if (errorEl) errorEl.classList.add('hidden');
+
+            if (isSignup) {
+                subtitle.textContent = 'Crie sua conta para organizar suas contas';
+                nameWrapper.classList.remove('hidden');
+                nameInput.required = true;
+                passInput.placeholder = 'Crie uma senha (mín. 6 caracteres)';
+                passInput.autocomplete = 'new-password';
+                submitBtn.textContent = 'Criar conta';
+                toggleBtn.textContent = 'Já tenho conta. Fazer login';
+            } else {
+                subtitle.textContent = 'Faça login para acessar suas contas';
+                nameWrapper.classList.add('hidden');
+                nameInput.required = false;
+                passInput.placeholder = 'Senha';
+                passInput.autocomplete = 'current-password';
+                submitBtn.textContent = 'Entrar';
+                toggleBtn.textContent = 'Primeiro acesso? Criar conta';
+            }
+        };
+
+        function translateAuthError(rawCode) {
+            const code = String(rawCode || '');
+            if (code.includes('EMAIL_EXISTS') || code.includes('email-already-in-use')) {
+                return 'Este e-mail já possui cadastro. Toque em "Já tenho conta" para entrar.';
+            }
+            if (code.includes('WEAK_PASSWORD') || code.includes('weak-password')) {
+                return 'A senha precisa ter pelo menos 6 caracteres.';
+            }
+            if (code.includes('INVALID_EMAIL') || code.includes('invalid-email')) {
+                return 'Digite um endereço de e-mail válido.';
+            }
+            if (code.includes('INVALID_LOGIN_CREDENTIALS') || code.includes('wrong-password') || code.includes('user-not-found') || code.includes('invalid-credential')) {
+                return 'E-mail ou senha incorretos.';
+            }
+            if (code.includes('TOO_MANY_ATTEMPTS') || code.includes('too-many-requests')) {
+                return 'Muitas tentativas seguidas. Aguarde alguns instantes e tente novamente.';
+            }
+            return `Não foi possível concluir (${code || 'erro'})`;
         }
-        let soon = open.filter { $0.daysLeft <= 3 }
-        if !soon.isEmpty {
-            let t = soon.count == 1 ? "1 conta vence em breve: \(soon[0].name)" : "\(soon.count) contas vencem em breve"
-            return (t, .orange)
-        }
-        return nil
-    }
 
-    func add(name: String, due: Date) {
-        let bill = Bill(name: name, dueDate: due)
-        bills.append(bill)
-        schedule(bill)
-    }
+        window.handleAuthSubmit = async function(e) {
+            if (e && e.preventDefault) e.preventDefault();
 
-    func update(_ bill: Bill, name: String, due: Date) {
-        guard let i = bills.firstIndex(where: { $0.id == bill.id }) else { return }
-        bills[i].name = name
-        bills[i].dueDate = due
-        schedule(bills[i])
-    }
+            const isSignup = window._authMode === 'signup';
+            const nameEl = document.getElementById('login-name');
+            const emailEl = document.getElementById('login-email');
+            const passEl = document.getElementById('login-password');
+            const errorEl = document.getElementById('login-error');
+            const btn = document.getElementById('login-btn');
 
-    func togglePaid(_ bill: Bill) {
-        guard let i = bills.firstIndex(where: { $0.id == bill.id }) else { return }
-        bills[i].isPaid.toggle()
-        schedule(bills[i])
-    }
+            const displayName = nameEl ? nameEl.value.trim() : '';
+            const email = emailEl ? emailEl.value.trim() : '';
+            const password = passEl ? passEl.value : '';
 
-    func delete(_ bill: Bill) {
-        cancel(bill)
-        bills.removeAll { $0.id == bill.id }
-    }
-
-    // MARK: Salvar e carregar
-
-    private func save() {
-        if let data = try? JSONEncoder().encode(bills) {
-            UserDefaults.standard.set(data, forKey: key)
-        }
-    }
-
-    private func load() {
-        guard let data = UserDefaults.standard.data(forKey: key),
-              let saved = try? JSONDecoder().decode([Bill].self, from: data) else { return }
-        bills = saved
-    }
-
-    // MARK: Notificações (às 9h, um dia antes e no dia do vencimento)
-
-    private func ids(_ bill: Bill) -> [String] {
-        ["\(bill.id.uuidString)-antes", "\(bill.id.uuidString)-dia"]
-    }
-
-    private func cancel(_ bill: Bill) {
-        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ids(bill))
-    }
-
-    private func schedule(_ bill: Bill) {
-        cancel(bill)
-        if bill.isPaid { return }
-
-        let cal = Calendar.current
-        let dia = cal.startOfDay(for: bill.dueDate)
-        let avisos: [(sufixo: String, deslocamento: Int, texto: String)] = [
-            ("antes", -1, "vence amanhã."),
-            ("dia", 0, "vence hoje.")
-        ]
-
-        for aviso in avisos {
-            guard let base = cal.date(byAdding: .day, value: aviso.deslocamento, to: dia),
-                  let quando = cal.date(bySettingHour: 9, minute: 0, second: 0, of: base),
-                  quando > Date() else { continue }
-
-            let content = UNMutableNotificationContent()
-            content.title = bill.name
-            content.body = "A conta \(aviso.texto)"
-            content.sound = .default
-
-            let comps = cal.dateComponents([.year, .month, .day, .hour, .minute], from: quando)
-            let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)
-            let request = UNNotificationRequest(
-                identifier: "\(bill.id.uuidString)-\(aviso.sufixo)",
-                content: content,
-                trigger: trigger
-            )
-            UNUserNotificationCenter.current().add(request)
-        }
-    }
-}
-
-// MARK: - Tela principal
-
-enum FormMode: Identifiable {
-    case new
-    case edit(Bill)
-
-    var id: String {
-        switch self {
-        case .new: return "new"
-        case .edit(let b): return b.id.uuidString
-        }
-    }
-}
-
-struct BillsView: View {
-    @StateObject private var store = BillStore()
-    @State private var mode: FormMode?
-
-    var body: some View {
-        NavigationStack {
-            List {
-                if let banner = store.banner {
-                    Label(banner.text, systemImage: "bell.fill")
-                        .font(.subheadline.bold())
-                        .foregroundStyle(banner.color)
-                        .listRowBackground(banner.color.opacity(0.12))
+            if (!email || !password) return;
+            if (isSignup && password.length < 6) {
+                if (errorEl) {
+                    errorEl.textContent = 'A senha precisa ter pelo menos 6 caracteres.';
+                    errorEl.classList.remove('hidden');
                 }
+                return;
+            }
 
-                if store.bills.isEmpty {
-                    Text("Nenhuma conta ainda. Toque em + para começar.")
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .padding(.vertical, 30)
-                        .listRowSeparator(.hidden)
-                }
+            if (errorEl) errorEl.classList.add('hidden');
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = isSignup ? 'Criando conta...' : 'Entrando...';
+            }
 
-                ForEach(store.sorted) { bill in
-                    BillRow(
-                        bill: bill,
-                        onToggle: { store.togglePaid(bill) },
-                        onEdit: { mode = .edit(bill) }
-                    )
-                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                        Button(role: .destructive) {
-                            store.delete(bill)
-                        } label: {
-                            Label("Excluir", systemImage: "trash")
+            try {
+                if (window.auth && typeof window.auth.signInWithEmailAndPassword === 'function') {
+                    if (isSignup) {
+                        const cred = await window.auth.createUserWithEmailAndPassword(email, password);
+                        if (cred.user && displayName) {
+                            await cred.user.updateProfile({ displayName });
+                            window.onAuthenticatedUser(cred.user);
                         }
+                    } else {
+                        await window.auth.signInWithEmailAndPassword(email, password);
                     }
+                } else {
+                    const endpoint = isSignup ? 'accounts:signUp' : 'accounts:signInWithPassword';
+                    const payload = isSignup
+                        ? { email, password, displayName, returnSecureToken: true }
+                        : { email, password, returnSecureToken: true };
+
+                    const res = await fetch(
+                        `https://identitytoolkit.googleapis.com/v1/${endpoint}?key=${FIREBASE_CONFIG.apiKey}`,
+                        {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        }
+                    );
+                    const data = await res.json();
+                    if (!res.ok) {
+                        throw new Error(data?.error?.message || 'AUTH_ERROR');
+                    }
+
+                    if (isSignup && displayName && data.idToken) {
+                        await fetch(
+                            `https://identitytoolkit.googleapis.com/v1/accounts:update?key=${FIREBASE_CONFIG.apiKey}`,
+                            {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ idToken: data.idToken, displayName, returnSecureToken: false })
+                            }
+                        );
+                    }
+
+                    window.currentUser = {
+                        uid: data.localId,
+                        email: data.email,
+                        displayName: displayName || data.displayName || ''
+                    };
+                    if (typeof window.onAuthenticatedUser === 'function') {
+                        window.onAuthenticatedUser(window.currentUser);
+                    }
+                }
+            } catch (err) {
+                if (errorEl) {
+                    errorEl.textContent = translateAuthError(err.code || err.message);
+                    errorEl.classList.remove('hidden');
+                }
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = window._authMode === 'signup' ? 'Criar conta' : 'Entrar';
                 }
             }
-            .listStyle(.plain)
-            .navigationTitle("Contas a vencer")
-            .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        mode = .new
-                    } label: {
-                        Label("Nova conta", systemImage: "plus")
-                    }
-                }
+        };
+    </script>
+</head>
+<body class="bg-[#F2F2F7] dark:bg-black text-black dark:text-white min-h-screen select-none overflow-x-hidden">
+
+    <!-- Aviso de Erro Técnico -->
+    <div id="fatal-error" class="hidden fixed top-4 inset-x-4 z-50 bg-red-600 text-white text-xs p-3 rounded-xl shadow-lg break-words"></div>
+
+    <!-- ================= TELA 1: LOGIN / PRIMEIRO ACESSO ================= -->
+    <div id="login-screen" class="min-h-screen flex flex-col justify-center px-6 max-w-md mx-auto">
+        <div class="text-center mb-8">
+            <img src="icon.png" alt="Ícone do app" class="w-16 h-16 rounded-2xl mx-auto mb-4 shadow-md object-cover">
+            <h1 class="text-2xl font-bold tracking-tight">Contas a vencer</h1>
+            <p id="auth-subtitle" class="text-sm text-gray-500 dark:text-gray-400 mt-1">Faça login para acessar suas contas</p>
+        </div>
+
+        <form id="login-form" onsubmit="handleAuthSubmit(event)" class="space-y-4">
+            <div class="bg-white dark:bg-[#1C1C1E] rounded-2xl overflow-hidden divide-y divide-gray-200 dark:divide-gray-800 shadow-sm">
+                <div id="signup-name-wrapper" class="hidden px-4 py-3.5">
+                    <input type="text" id="login-name" placeholder="Seu nome" autocomplete="name"
+                        class="w-full bg-transparent text-base outline-none placeholder-gray-400">
+                </div>
+                <div class="px-4 py-3.5">
+                    <input type="email" id="login-email" required placeholder="E-mail" autocomplete="email"
+                        class="w-full bg-transparent text-base outline-none placeholder-gray-400">
+                </div>
+                <div class="px-4 py-3.5">
+                    <input type="password" id="login-password" required placeholder="Senha" autocomplete="current-password"
+                        class="w-full bg-transparent text-base outline-none placeholder-gray-400">
+                </div>
+            </div>
+
+            <p id="login-error" class="hidden text-red-500 text-sm text-center font-medium"></p>
+
+            <button type="submit" id="login-btn" class="w-full bg-[#007AFF] active:opacity-80 text-white font-semibold py-3.5 rounded-2xl shadow-sm transition">
+                Entrar
+            </button>
+
+            <div class="pt-2 text-center">
+                <button type="button" id="toggle-auth-btn" onclick="toggleAuthMode()"
+                    class="text-[#007AFF] text-sm font-semibold active:opacity-60 py-2">
+                    Primeiro acesso? Criar conta
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- ================= TELA 2: APP DE CONTAS ================= -->
+    <div id="app-screen" class="hidden">
+        <header class="sticky top-0 z-30 bg-[#F2F2F7] dark:bg-black px-4 pt-2.5 pb-2 border-b border-gray-200 dark:border-gray-800 shadow-sm">
+            <div class="flex justify-between items-center h-7">
+                <button type="button" onclick="handleLogout()" class="text-[#007AFF] text-[15px] active:opacity-50">
+                    Sair
+                </button>
+            </div>
+            <p id="user-greeting" class="text-[13px] font-medium text-gray-500 dark:text-gray-400 mt-0.5">Olá.</p>
+            <h1 id="page-title" class="text-[30px] font-bold tracking-tight leading-tight">Contas a vencer</h1>
+
+            <!-- Seletor de Página: Histórico (esquerda) x Mês atual (direita) -->
+            <div class="mt-2.5 grid grid-cols-2 bg-gray-200 dark:bg-[#1C1C1E] p-1 rounded-xl">
+                <button type="button" id="tab-history" onclick="switchPage('history')"
+                    class="py-1 text-sm font-semibold rounded-lg text-gray-600 dark:text-gray-400 transition">
+                    Histórico
+                </button>
+                <button type="button" id="tab-current" onclick="switchPage('current')"
+                    class="py-1 text-sm font-semibold rounded-lg bg-white dark:bg-[#2C2C2E] text-black dark:text-white shadow-sm transition">
+                    Mês atual
+                </button>
+            </div>
+        </header>
+
+        <main class="relative z-0 px-4 py-3.5 max-w-lg mx-auto space-y-3.5 pb-28">
+            <!-- Resumo simples de valores -->
+            <div id="totals-card" class="hidden grid grid-cols-2 gap-2.5">
+                <div class="bg-white dark:bg-[#1C1C1E] rounded-2xl px-3.5 py-2.5 shadow-sm">
+                    <div id="label-open" class="text-xs font-medium text-gray-500 dark:text-gray-400">Em aberto</div>
+                    <div id="total-open" class="text-base font-bold mt-0.5">R$ 0,00</div>
+                </div>
+                <div class="bg-white dark:bg-[#1C1C1E] rounded-2xl px-3.5 py-2.5 shadow-sm">
+                    <div id="label-paid" class="text-xs font-medium text-gray-500 dark:text-gray-400">Pagas</div>
+                    <div id="total-paid" class="text-base font-bold text-green-600 dark:text-green-500 mt-0.5">R$ 0,00</div>
+                </div>
+            </div>
+
+            <div id="alert-banner" class="hidden rounded-xl p-3 flex items-center gap-2.5 font-semibold text-xs shadow-sm">
+                <svg class="w-4 h-4 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                    <path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z"/>
+                </svg>
+                <span id="alert-text"></span>
+            </div>
+
+            <div id="recurring-toast" class="hidden rounded-xl p-2.5 bg-[#007AFF]/15 text-[#007AFF] text-xs font-semibold text-center"></div>
+
+            <div id="empty-state" class="hidden text-center py-16 text-gray-500 dark:text-gray-400">
+                <p id="empty-text" class="text-base">Nenhuma conta ainda.<br>Toque em <strong>+</strong> para começar.</p>
+            </div>
+
+            <!-- Contêiner das seções agrupadas -->
+            <div id="grouped-bills" class="space-y-4"></div>
+        </main>
+
+        <!-- Botão + Centralizado na Parte Inferior -->
+        <div class="fixed inset-x-0 bottom-0 z-20 pointer-events-none flex justify-center pb-[calc(1rem+env(safe-area-inset-bottom))]">
+            <button type="button" onclick="openModal()" aria-label="Nova conta"
+                class="pointer-events-auto w-14 h-14 rounded-full bg-[#007AFF] text-white shadow-lg shadow-blue-500/30 flex items-center justify-center active:scale-95 transition">
+                <svg class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/>
+                </svg>
+            </button>
+        </div>
+    </div>
+
+    <!-- Modal / Sheet -->
+    <div id="modal-backdrop" onclick="closeModal()" class="fixed inset-0 bg-black/40 z-40 hidden opacity-0 transition-opacity duration-300"></div>
+    
+    <div id="bill-sheet" class="fixed inset-x-0 bottom-0 z-50 bg-[#F2F2F7] dark:bg-[#1C1C1E] rounded-t-2xl shadow-2xl sheet-enter hidden pb-8">
+        <div class="flex items-center justify-between px-4 py-3.5 border-b border-gray-200 dark:border-gray-800">
+            <button type="button" onclick="closeModal()" class="text-[#007AFF] text-base active:opacity-50">Cancelar</button>
+            <h2 id="modal-title" class="font-semibold text-base">Nova conta</h2>
+            <button type="button" id="save-btn" onclick="saveBill()" class="text-[#007AFF] font-semibold text-base disabled:opacity-30 active:opacity-50" disabled>Salvar</button>
+        </div>
+
+        <div class="p-4 space-y-3">
+            <div class="bg-white dark:bg-[#2C2C2E] rounded-xl overflow-hidden divide-y divide-gray-200 dark:divide-gray-700">
+                <div class="px-4 py-3">
+                    <input type="text" id="bill-name" placeholder="Nome da conta (ex: Luz, Internet)" oninput="validateForm()"
+                        class="w-full bg-transparent text-base outline-none placeholder-gray-400">
+                </div>
+                <div class="px-4 py-3 flex items-center justify-between">
+                    <label for="bill-amount" class="text-base">Valor (opcional)</label>
+                    <input type="number" id="bill-amount" step="0.01" min="0" inputmode="decimal" placeholder="0,00"
+                        class="w-32 bg-gray-100 dark:bg-[#3A3A3C] px-3 py-1.5 rounded-lg text-base outline-none text-right">
+                </div>
+                <div class="px-4 py-3 flex items-center justify-between">
+                    <label for="bill-date" class="text-base">Vencimento</label>
+                    <input type="date" id="bill-date" onchange="validateForm()"
+                        class="bg-gray-100 dark:bg-[#3A3A3C] px-3 py-1.5 rounded-lg text-base outline-none text-right">
+                </div>
+                <label for="bill-recurring" class="px-4 py-3.5 flex items-center justify-between cursor-pointer">
+                    <div>
+                        <div class="text-base">Repetir mensalmente</div>
+                        <div class="text-xs text-gray-500 dark:text-gray-400">Aparece na virada do mês e cria próximo mês ao pagar</div>
+                    </div>
+                    <div class="relative inline-flex items-center">
+                        <input type="checkbox" id="bill-recurring" class="sr-only peer">
+                        <div class="w-11 h-6 bg-gray-300 dark:bg-gray-600 rounded-full peer peer-checked:bg-[#34C759] transition-colors after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-5 shadow-inner"></div>
+                    </div>
+                </label>
+            </div>
+
+            <button type="button" id="modal-calendar-btn" onclick="exportEditingBillToCalendar()" class="hidden w-full bg-white dark:bg-[#2C2C2E] text-[#007AFF] font-semibold py-3 rounded-xl active:bg-gray-100 dark:active:bg-gray-700">
+                Adicionar vencimento ao Calendário
+            </button>
+
+            <button type="button" id="delete-btn" onclick="deleteCurrentBill()" class="hidden w-full bg-white dark:bg-[#2C2C2E] text-red-500 font-medium py-3 rounded-xl active:bg-gray-100 dark:active:bg-gray-700">
+                Excluir conta
+            </button>
+        </div>
+    </div>
+
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+
+    <script>
+        window.auth = null;
+        window.db = null;
+        window.currentUser = null;
+
+        let bills = [];
+        let editingId = null;
+        let unsubscribeBills = null;
+        let currentPage = 'current';
+
+        function getUserBillsCollection() {
+            if (!window.db || !window.currentUser) return null;
+            return window.db.collection("users").doc(window.currentUser.uid).collection("bills");
+        }
+
+        function formatUserName(user) {
+            if (user.displayName && user.displayName.trim()) {
+                return user.displayName.trim();
             }
-            .sheet(item: $mode) { m in
-                switch m {
-                case .new:
-                    BillForm(bill: nil) { nome, data in
-                        store.add(name: nome, due: data)
-                    }
-                case .edit(let b):
-                    BillForm(bill: b) { nome, data in
-                        store.update(b, name: nome, due: data)
-                    }
+            if (user.email) {
+                const rawName = user.email.split('@')[0].replace(/[._-]+/g, ' ').trim();
+                return rawName.charAt(0).toUpperCase() + rawName.slice(1);
+            }
+            return 'Usuário';
+        }
+
+        function formatBRL(value) {
+            const num = Number(value) || 0;
+            return num.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+        }
+
+        function isIOSDevice() {
+            return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+                (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        }
+
+        function formatCalDate(isoDateStr) {
+            return isoDateStr.replace(/-/g, '');
+        }
+
+        function getNextDayCalDate(isoDateStr) {
+            const d = parseLocalDate(isoDateStr);
+            d.setDate(d.getDate() + 1);
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return `${y}${m}${day}`;
+        }
+
+        function escapeICSText(str) {
+            return String(str || '')
+                .replace(/\\/g, '\\\\')
+                .replace(/;/g, '\\;')
+                .replace(/,/g, '\\,')
+                .replace(/\n/g, '\\n');
+        }
+
+        function buildICSContentForBill(bill) {
+            const startICS = formatCalDate(bill.dueDate);
+            const endICS = getNextDayCalDate(bill.dueDate);
+            const nowStamp = new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+
+            const amountLine = bill.amount != null && Number(bill.amount) > 0
+                ? `Valor: ${formatBRL(bill.amount)}`
+                : 'Lembrete de vencimento de conta';
+
+            return [
+                'BEGIN:VCALENDAR',
+                'VERSION:2.0',
+                'PRODID:-//Contas a vencer//PWA//PT',
+                'CALSCALE:GREGORIAN',
+                'METHOD:PUBLISH',
+                'BEGIN:VEVENT',
+                `UID:${bill.id || Date.now()}-${startICS}@contas-pwa`,
+                `DTSTAMP:${nowStamp}`,
+                `DTSTART;VALUE=DATE:${startICS}`,
+                `DTEND;VALUE=DATE:${endICS}`,
+                `SUMMARY:${escapeICSText(`Vencimento: ${bill.name}`)}`,
+                `DESCRIPTION:${escapeICSText(amountLine)}`,
+                'BEGIN:VALARM',
+                'ACTION:DISPLAY',
+                `DESCRIPTION:${escapeICSText(`Vencimento hoje: ${bill.name}`)}`,
+                'TRIGGER:PT9H',
+                'END:VALARM',
+                'END:VEVENT',
+                'END:VCALENDAR'
+            ].join('\r\n');
+        }
+
+        function buildGoogleCalendarURL(bill) {
+            const startDate = formatCalDate(bill.dueDate);
+            const endDate = getNextDayCalDate(bill.dueDate);
+            const title = `Vencimento: ${bill.name}`;
+            const details = bill.amount != null && Number(bill.amount) > 0
+                ? `Valor: ${formatBRL(bill.amount)}`
+                : 'Lembrete de vencimento de conta';
+
+            const params = new URLSearchParams({
+                action: 'TEMPLATE',
+                text: title,
+                dates: `${startDate}/${endDate}`,
+                details
+            });
+
+            return `https://calendar.google.com/calendar/render?${params.toString()}`;
+        }
+
+        function triggerCalendarOpen(bill) {
+            if (!bill || !bill.name || !bill.dueDate) return;
+
+            if (isIOSDevice()) {
+                const icsContent = buildICSContentForBill(bill);
+                const safeSlug = bill.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'conta';
+                const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `vencimento-${safeSlug}.ics`;
+                link.style.display = 'none';
+                document.body.appendChild(link);
+                link.click();
+                setTimeout(() => {
+                    document.body.removeChild(link);
+                    URL.revokeObjectURL(url);
+                }, 1000);
+                showToast(`Evento de "${bill.name}" enviado para o Calendário.`);
+                return;
+            }
+
+            const url = buildGoogleCalendarURL(bill);
+            window.open(url, '_blank', 'noopener,noreferrer');
+            showToast(`Evento de "${bill.name}" aberto no Calendário.`);
+        }
+
+        function exportBillToCalendar(id) {
+            const bill = bills.find(b => b.id === id);
+            if (!bill || !bill.dueDate) return;
+            triggerCalendarOpen(bill);
+        }
+
+        function exportEditingBillToCalendar() {
+            const name = document.getElementById('bill-name').value.trim();
+            const rawAmount = document.getElementById('bill-amount').value;
+            const amount = rawAmount !== '' ? Number(rawAmount) : null;
+            const dueDate = document.getElementById('bill-date').value;
+            if (!name || !dueDate) return;
+
+            triggerCalendarOpen({
+                id: editingId || String(Date.now()),
+                name,
+                amount,
+                dueDate
+            });
+        }
+
+        function switchPage(page) {
+            currentPage = page;
+            const tabCurrent = document.getElementById('tab-current');
+            const tabHistory = document.getElementById('tab-history');
+            const pageTitle = document.getElementById('page-title');
+
+            if (page === 'current') {
+                tabCurrent.className = 'py-1 text-sm font-semibold rounded-lg bg-white dark:bg-[#2C2C2E] text-black dark:text-white shadow-sm transition';
+                tabHistory.className = 'py-1 text-sm font-semibold rounded-lg text-gray-600 dark:text-gray-400 transition';
+                pageTitle.textContent = 'Contas a vencer';
+            } else {
+                tabHistory.className = 'py-1 text-sm font-semibold rounded-lg bg-white dark:bg-[#2C2C2E] text-black dark:text-white shadow-sm transition';
+                tabCurrent.className = 'py-1 text-sm font-semibold rounded-lg text-gray-600 dark:text-gray-400 transition';
+                pageTitle.textContent = 'Histórico';
+            }
+            render();
+        }
+
+        function getMonthKeyFromDateStr(isoDateStr) {
+            const [y, m] = isoDateStr.split('-');
+            return `${y}-${m}`;
+        }
+
+        function getOffsetMonthKey(monthOffset) {
+            const now = new Date();
+            const d = new Date(now.getFullYear(), now.getMonth() + monthOffset, 1);
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            return `${y}-${m}`;
+        }
+
+        function formatMonthLabel(monthKey) {
+            const [y, m] = monthKey.split('-').map(Number);
+            const d = new Date(y, m - 1, 1);
+            return d.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+        }
+
+        window.onAuthenticatedUser = function(user) {
+            window.currentUser = user;
+            if (user) {
+                document.getElementById('user-greeting').textContent = `Olá ${formatUserName(user)}.`;
+                document.getElementById('login-screen').classList.add('hidden');
+                document.getElementById('app-screen').classList.remove('hidden');
+                startListeningBills();
+            } else {
+                if (unsubscribeBills) { unsubscribeBills(); unsubscribeBills = null; }
+                bills = [];
+                render();
+                document.getElementById('app-screen').classList.add('hidden');
+                document.getElementById('login-screen').classList.remove('hidden');
+            }
+        };
+
+        try {
+            if (typeof firebase !== 'undefined') {
+                if (!firebase.apps.length) {
+                    firebase.initializeApp(FIREBASE_CONFIG);
                 }
+                window.auth = firebase.auth();
+                window.db = firebase.firestore();
+
+                window.auth.onAuthStateChanged((user) => {
+                    window.onAuthenticatedUser(user);
+                });
+            }
+        } catch (err) {
+            const box = document.getElementById('fatal-error');
+            if (box) {
+                box.textContent = 'Aviso Firebase: ' + err.message;
+                box.classList.remove('hidden');
             }
         }
-    }
-}
 
-// MARK: - Linha de cada conta
-
-struct BillRow: View {
-    let bill: Bill
-    let onToggle: () -> Void
-    let onEdit: () -> Void
-
-    var body: some View {
-        HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(bill.name)
-                    .font(.headline)
-                    .strikethrough(bill.isPaid)
-                    .foregroundStyle(bill.isPaid ? Color.secondary : Color.primary)
-                    .lineLimit(1)
-                HStack(spacing: 6) {
-                    Text(bill.statusText)
-                        .fontWeight(.bold)
-                        .foregroundStyle(bill.statusColor)
-                    Text(bill.dueDate.formatted(.dateTime.day().month(.abbreviated)))
-                        .foregroundStyle(.secondary)
-                }
-                .font(.footnote)
-                .lineLimit(1)
-            }
-
-            Spacer(minLength: 4)
-
-            Button(action: onEdit) {
-                Image(systemName: "pencil")
-                    .foregroundStyle(.secondary)
-                    .frame(width: 32, height: 32)
-            }
-            .buttonStyle(.borderless)
-
-            Button(action: onToggle) {
-                Text(bill.isPaid ? "✓ Paga" : "Não paga")
-                    .font(.subheadline.bold())
-                    .frame(minWidth: 70)
-                    .padding(.vertical, 7)
-                    .padding(.horizontal, 10)
-                    .foregroundStyle(bill.isPaid ? Color.white : Color.primary)
-                    .background(bill.isPaid ? Color.green : Color.clear, in: Capsule())
-                    .overlay(Capsule().stroke(bill.isPaid ? Color.green : Color.primary, lineWidth: 2))
-            }
-            .buttonStyle(.borderless)
+        async function handleLogout() {
+            if (window.auth) await window.auth.signOut();
+            window.onAuthenticatedUser(null);
         }
-        .padding(.vertical, 2)
-    }
-}
 
-// MARK: - Formulário (nova conta / editar conta)
+        function startListeningBills() {
+            if (unsubscribeBills) { unsubscribeBills(); unsubscribeBills = null; }
+            const colRef = getUserBillsCollection();
+            if (!colRef) return;
 
-struct BillForm: View {
-    @Environment(\.dismiss) private var dismiss
-    @State private var name: String
-    @State private var date: Date
-    private let title: String
-    private let onSave: (String, Date) -> Void
+            unsubscribeBills = colRef.onSnapshot((snapshot) => {
+                bills = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                render();
+            }, (error) => {
+                const box = document.getElementById('fatal-error');
+                box.textContent = 'Erro no banco de dados: ' + error.message;
+                box.classList.remove('hidden');
+            });
+        }
 
-    init(bill: Bill?, onSave: @escaping (String, Date) -> Void) {
-        _name = State(initialValue: bill?.name ?? "")
-        _date = State(initialValue: bill?.dueDate ?? (Calendar.current.date(byAdding: .day, value: 3, to: Date()) ?? Date()))
-        self.title = bill == nil ? "Nova conta" : "Editar conta"
-        self.onSave = onSave
-    }
+        function addOneMonthISO(isoDateStr) {
+            const [y, m, d] = isoDateStr.split('-').map(Number);
+            const targetMonthIndex = m;
+            const daysInTargetMonth = new Date(y, targetMonthIndex + 1, 0).getDate();
+            const safeDay = Math.min(d, daysInTargetMonth);
+            const nextDate = new Date(y, targetMonthIndex, safeDay);
 
-    private var cleanName: String {
-        name.trimmingCharacters(in: .whitespaces)
-    }
+            const ny = nextDate.getFullYear();
+            const nm = String(nextDate.getMonth() + 1).padStart(2, '0');
+            const nd = String(nextDate.getDate()).padStart(2, '0');
+            return `${ny}-${nm}-${nd}`;
+        }
 
-    var body: some View {
-        NavigationStack {
-            Form {
-                TextField("Nome da conta", text: $name)
-                DatePicker("Vencimento", selection: $date, displayedComponents: .date)
-            }
-            .navigationTitle(title)
-            #if os(iOS)
-            .navigationBarTitleDisplayMode(.inline)
-            #endif
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancelar") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Salvar") {
-                        onSave(cleanName, date)
-                        dismiss()
-                    }
-                    .disabled(cleanName.isEmpty)
-                }
+        function showToast(msg) {
+            const toast = document.getElementById('recurring-toast');
+            toast.textContent = msg;
+            toast.classList.remove('hidden');
+            clearTimeout(window._toastTimer);
+            window._toastTimer = setTimeout(() => toast.classList.add('hidden'), 3500);
+        }
+
+        async function togglePaid(id) {
+            const colRef = getUserBillsCollection();
+            const bill = bills.find(b => b.id === id);
+            if (!colRef || !bill) return;
+
+            const markingAsPaid = !bill.isPaid;
+
+            if (markingAsPaid && bill.isRecurring && !bill.nextGenerated) {
+                const nextDueDate = addOneMonthISO(bill.dueDate);
+                await colRef.doc(id).update({ isPaid: true, nextGenerated: true });
+                await colRef.add({
+                    name: bill.name,
+                    amount: bill.amount ?? null,
+                    dueDate: nextDueDate,
+                    isPaid: false,
+                    isRecurring: true,
+                    nextGenerated: false
+                });
+                showToast(`Próxima "${bill.name}" criada para ${formatShortDate(nextDueDate)}.`);
+            } else {
+                await colRef.doc(id).update({ isPaid: markingAsPaid });
             }
         }
-        .presentationDetents([.medium])
-    }
-}
 
-// MARK: - Início do app
-
-@main
-struct ContasApp: App {
-    init() {
-        // Pede permissão para enviar avisos
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
-    }
-
-    var body: some Scene {
-        WindowGroup {
-            BillsView()
+        async function deleteBillById(id) {
+            const colRef = getUserBillsCollection();
+            if (!colRef) return;
+            await colRef.doc(id).delete();
         }
-    }
-}
+
+        function openModal(id = null) {
+            closeAllSwipes();
+            editingId = id;
+            const modalTitle = document.getElementById('modal-title');
+            const nameInput = document.getElementById('bill-name');
+            const amountInput = document.getElementById('bill-amount');
+            const dateInput = document.getElementById('bill-date');
+            const recurringInput = document.getElementById('bill-recurring');
+            const calendarBtn = document.getElementById('modal-calendar-btn');
+            const deleteBtn = document.getElementById('delete-btn');
+
+            if (id) {
+                const bill = bills.find(b => b.id === id);
+                modalTitle.textContent = 'Editar conta';
+                nameInput.value = bill.name;
+                amountInput.value = bill.amount != null ? bill.amount : '';
+                dateInput.value = bill.dueDate;
+                recurringInput.checked = Boolean(bill.isRecurring);
+                calendarBtn.classList.remove('hidden');
+                deleteBtn.classList.remove('hidden');
+            } else {
+                modalTitle.textContent = 'Nova conta';
+                nameInput.value = '';
+                amountInput.value = '';
+                const defaultDate = new Date();
+                defaultDate.setDate(defaultDate.getDate() + 3);
+                dateInput.value = defaultDate.toISOString().split('T')[0];
+                recurringInput.checked = false;
+                calendarBtn.classList.add('hidden');
+                deleteBtn.classList.add('hidden');
+            }
+
+            validateForm();
+            const backdrop = document.getElementById('modal-backdrop');
+            const sheet = document.getElementById('bill-sheet');
+            backdrop.classList.remove('hidden');
+            sheet.classList.remove('hidden');
+            requestAnimationFrame(() => {
+                backdrop.classList.remove('opacity-0');
+                sheet.classList.add('sheet-open');
+            });
+            setTimeout(() => nameInput.focus(), 100);
+        }
+
+        function closeModal() {
+            const backdrop = document.getElementById('modal-backdrop');
+            const sheet = document.getElementById('bill-sheet');
+            backdrop.classList.add('opacity-0');
+            sheet.classList.remove('sheet-open');
+            setTimeout(() => { backdrop.classList.add('hidden'); sheet.classList.add('hidden'); }, 300);
+        }
+
+        function validateForm() {
+            const name = document.getElementById('bill-name').value.trim();
+            const date = document.getElementById('bill-date').value;
+            document.getElementById('save-btn').disabled = !(name.length > 0 && date);
+        }
+
+        async function saveBill() {
+            const colRef = getUserBillsCollection();
+            const name = document.getElementById('bill-name').value.trim();
+            const rawAmount = document.getElementById('bill-amount').value;
+            const amount = rawAmount !== '' ? Number(rawAmount) : null;
+            const dueDate = document.getElementById('bill-date').value;
+            const isRecurring = document.getElementById('bill-recurring').checked;
+            if (!colRef || !name || !dueDate) return;
+
+            const isNewBill = !editingId;
+            let savedId = editingId;
+
+            if (editingId) {
+                await colRef.doc(editingId).update({ name, amount, dueDate, isRecurring });
+            } else {
+                const docRef = await colRef.add({
+                    name,
+                    amount,
+                    dueDate,
+                    isPaid: false,
+                    isRecurring,
+                    nextGenerated: false
+                });
+                savedId = docRef.id;
+            }
+
+            closeModal();
+
+            if (isNewBill) {
+                triggerCalendarOpen({ id: savedId, name, amount, dueDate });
+            }
+        }
+
+        async function deleteCurrentBill() {
+            const colRef = getUserBillsCollection();
+            if (!colRef || !editingId) return;
+            await colRef.doc(editingId).delete();
+            closeModal();
+        }
+
+        function getStartOfDay(dateObj) {
+            return new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate());
+        }
+
+        function parseLocalDate(isoDateStr) {
+            const [y, m, d] = isoDateStr.split('-').map(Number);
+            return new Date(y, m - 1, d);
+        }
+
+        function getDaysLeft(dueDateStr) {
+            const hoje = getStartOfDay(new Date());
+            const venc = parseLocalDate(dueDateStr);
+            return Math.round((venc - hoje) / (1000 * 60 * 60 * 24));
+        }
+
+        function getStatusInfo(bill) {
+            if (bill.isPaid) return { text: 'Paga', colorClass: 'text-green-600 dark:text-green-500' };
+            const n = getDaysLeft(bill.dueDate);
+            let text = n < -1 ? `Venceu há ${-n} dias` : n === -1 ? 'Venceu há 1 dia' : n === 0 ? 'Vence hoje' : n === 1 ? 'Vence amanhã' : `Vence em ${n} dias`;
+            let colorClass = n < 0 ? 'text-red-600 dark:text-red-500' : n <= 3 ? 'text-orange-500 dark:text-orange-400' : 'text-gray-500 dark:text-gray-400';
+            return { text, colorClass };
+        }
+
+        function formatShortDate(dueDateStr) {
+            return parseLocalDate(dueDateStr).toLocaleDateString('pt-BR', { day: 'numeric', month: 'short' }).replace('.', '');
+        }
+
+        function closeAllSwipes(exceptEl = null) {
+            document.querySelectorAll('.swipe-content').forEach(el => {
+                if (el !== exceptEl) {
+                    el.style.transform = 'translateX(0px)';
+                    el.dataset.open = 'false';
+                }
+            });
+        }
+
+        function attachSwipeGesture(container, contentEl) {
+            let startX = 0;
+            let startY = 0;
+            let currentX = 0;
+            let isSwiping = false;
+            const actionWidth = 76;
+
+            contentEl.addEventListener('touchstart', (e) => {
+                startX = e.touches[0].clientX;
+                startY = e.touches[0].clientY;
+                isSwiping = false;
+                contentEl.classList.add('swipe-dragging');
+            }, { passive: true });
+
+            contentEl.addEventListener('touchmove', (e) => {
+                const diffX = e.touches[0].clientX - startX;
+                const diffY = e.touches[0].clientY - startY;
+
+                if (!isSwiping && Math.abs(diffY) > Math.abs(diffX)) return;
+                
+                isSwiping = true;
+                closeAllSwipes(contentEl);
+
+                const isOpen = contentEl.dataset.open === 'true';
+                let translate = isOpen ? -actionWidth + diffX : diffX;
+
+                if (translate > 0) translate = 0;
+                if (translate < -actionWidth - 15) translate = -actionWidth - 15;
+
+                currentX = translate;
+                contentEl.style.transform = `translateX(${translate}px)`;
+            }, { passive: true });
+
+            contentEl.addEventListener('touchend', () => {
+                contentEl.classList.remove('swipe-dragging');
+                if (!isSwiping) return;
+
+                if (currentX < -38) {
+                    contentEl.style.transform = `translateX(-${actionWidth}px)`;
+                    contentEl.dataset.open = 'true';
+                } else {
+                    contentEl.style.transform = 'translateX(0px)';
+                    contentEl.dataset.open = 'false';
+                }
+            });
+        }
+
+        function buildBillRow(bill) {
+            const status = getStatusInfo(bill);
+
+            const wrapper = document.createElement('div');
+            wrapper.className = 'relative overflow-hidden bg-red-500';
+
+            const trashBtn = document.createElement('button');
+            trashBtn.type = 'button';
+            trashBtn.className = 'absolute inset-y-0 right-0 w-[76px] bg-red-500 active:bg-red-600 text-white flex items-center justify-center';
+            trashBtn.setAttribute('aria-label', 'Excluir');
+            trashBtn.onclick = () => deleteBillById(bill.id);
+            trashBtn.innerHTML = `
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                </svg>
+            `;
+
+            const recurringBadge = bill.isRecurring
+                ? `<span class="inline-flex items-center gap-0.5 whitespace-nowrap text-[10px] font-semibold px-1.5 py-0.2 rounded bg-blue-500/10 text-[#007AFF]">↻ Mensal</span>`
+                : '';
+
+            const amountText = bill.amount != null && Number(bill.amount) > 0
+                ? `<span class="text-gray-600 dark:text-gray-300 font-semibold whitespace-nowrap">• ${formatBRL(bill.amount)}</span>`
+                : '';
+
+            const contentEl = document.createElement('div');
+            contentEl.className = 'swipe-content relative bg-white dark:bg-[#1C1C1E] flex items-center justify-between px-3.5 py-2.5 gap-1.5';
+            contentEl.dataset.open = 'false';
+            contentEl.innerHTML = `
+                <div class="min-w-0 flex-1">
+                    <div class="font-semibold text-[16px] leading-snug truncate ${bill.isPaid ? 'line-through text-gray-400 dark:text-gray-500' : ''}">
+                        ${escapeHTML(bill.name)}
+                    </div>
+                    <div class="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[12px] leading-tight mt-0.5">
+                        <span class="font-bold whitespace-nowrap ${status.colorClass}">${status.text}</span>
+                        <span class="text-gray-400 dark:text-gray-500 whitespace-nowrap">• ${formatShortDate(bill.dueDate)}</span>
+                        ${amountText}
+                        ${recurringBadge}
+                    </div>
+                </div>
+                <div class="flex items-center gap-0.5 shrink-0">
+                    <button type="button" onclick="exportBillToCalendar('${bill.id}')" aria-label="Adicionar ao calendário" class="p-1.5 text-gray-400 hover:text-gray-300 active:opacity-50">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                        </svg>
+                    </button>
+                    <button type="button" onclick="openModal('${bill.id}')" aria-label="Editar" class="p-1.5 text-gray-400 hover:text-gray-300 active:opacity-50">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
+                        </svg>
+                    </button>
+                    <button type="button" onclick="togglePaid('${bill.id}')" 
+                        class="text-[13px] font-bold min-w-[82px] py-1 px-2.5 ml-0.5 rounded-full border-2 transition-colors active:scale-95
+                        ${bill.isPaid ? 'bg-green-600 border-green-600 text-white' : 'border-black dark:border-white text-black dark:text-white'}">
+                        ${bill.isPaid ? '✓ Paga' : 'Não paga'}
+                    </button>
+                </div>
+            `;
+
+            wrapper.appendChild(trashBtn);
+            wrapper.appendChild(contentEl);
+            attachSwipeGesture(wrapper, contentEl);
+            return wrapper;
+        }
+
+        function render() {
+            const groupedEl = document.getElementById('grouped-bills');
+            const emptyEl = document.getElementById('empty-state');
+            const emptyTextEl = document.getElementById('empty-text');
+            const bannerEl = document.getElementById('alert-banner');
+            const bannerTextEl = document.getElementById('alert-text');
+            const totalsCard = document.getElementById('totals-card');
+
+            const currentMonthKey = getOffsetMonthKey(0);
+            const prevMonth1Key = getOffsetMonthKey(-1);
+            const prevMonth2Key = getOffsetMonthKey(-2);
+            const historyMonthKeys = [prevMonth1Key, prevMonth2Key];
+
+            const byDueDate = (a, b) => parseLocalDate(a.dueDate) - parseLocalDate(b.dueDate);
+
+            const currentBills = bills.filter(b => {
+                if (!b.dueDate) return false;
+                const mKey = getMonthKeyFromDateStr(b.dueDate);
+                if (mKey === currentMonthKey) return true;
+                if (mKey < currentMonthKey && b.isRecurring && !b.isPaid) return true;
+                return false;
+            });
+
+            const historyBills = bills.filter(b => {
+                if (!b.dueDate) return false;
+                const mKey = getMonthKeyFromDateStr(b.dueDate);
+                return historyMonthKeys.includes(mKey);
+            });
+
+            const activeSet = currentPage === 'current' ? currentBills : historyBills;
+
+            const hasAnyAmount = activeSet.some(b => b.amount != null && Number(b.amount) > 0);
+            if (hasAnyAmount) {
+                const openItems = activeSet.filter(b => !b.isPaid);
+                const paidItems = activeSet.filter(b => b.isPaid);
+                const sumOpen = openItems.reduce((acc, b) => acc + (Number(b.amount) || 0), 0);
+                const sumPaid = paidItems.reduce((acc, b) => acc + (Number(b.amount) || 0), 0);
+                document.getElementById('total-open').textContent = formatBRL(sumOpen);
+                document.getElementById('total-paid').textContent = formatBRL(sumPaid);
+                totalsCard.classList.remove('hidden');
+            } else {
+                totalsCard.classList.add('hidden');
+            }
+
+            bannerEl.className = 'hidden rounded-xl p-3 flex items-center gap-2.5 font-semibold text-xs shadow-sm';
+            groupedEl.innerHTML = '';
+
+            if (currentPage === 'current') {
+                const open = currentBills.filter(b => !b.isPaid).sort(byDueDate);
+                const paid = currentBills.filter(b => b.isPaid).sort(byDueDate);
+
+                const late = open.filter(b => getDaysLeft(b.dueDate) < 0);
+                const soon = open.filter(b => {
+                    const d = getDaysLeft(b.dueDate);
+                    return d >= 0 && d <= 3;
+                });
+                const upcoming = open.filter(b => getDaysLeft(b.dueDate) > 3);
+
+                if (late.length > 0) {
+                    bannerEl.classList.remove('hidden');
+                    bannerEl.classList.add('bg-red-500/15', 'text-red-600', 'dark:text-red-400');
+                    bannerTextEl.textContent = late.length === 1 ? `1 conta atrasada: ${late[0].name}` : `${late.length} contas atrasadas`;
+                } else if (soon.length > 0) {
+                    bannerEl.classList.remove('hidden');
+                    bannerEl.classList.add('bg-orange-500/15', 'text-orange-600', 'dark:text-orange-400');
+                    bannerTextEl.textContent = soon.length === 1 ? `1 conta vence em breve: ${soon[0].name}` : `${soon.length} contas vencem em breve`;
+                }
+
+                if (currentBills.length === 0) {
+                    groupedEl.classList.add('hidden');
+                    emptyTextEl.innerHTML = 'Nenhuma conta neste mês.<br>Toque em <strong>+</strong> para começar.';
+                    emptyEl.classList.remove('hidden');
+                    return;
+                }
+
+                emptyEl.classList.add('hidden');
+                groupedEl.classList.remove('hidden');
+
+                const groups = [
+                    { title: 'Atrasadas', items: late, titleClass: 'text-red-600 dark:text-red-400' },
+                    { title: 'Vencem em breve', items: soon, titleClass: 'text-orange-600 dark:text-orange-400' },
+                    { title: 'Próximas', items: upcoming, titleClass: 'text-gray-500 dark:text-gray-400' },
+                    { title: 'Pagas', items: paid, titleClass: 'text-green-600 dark:text-green-500' }
+                ];
+
+                groups.forEach(group => {
+                    if (group.items.length === 0) return;
+
+                    const section = document.createElement('section');
+                    section.className = 'space-y-1';
+
+                    const heading = document.createElement('h2');
+                    heading.className = `px-1 text-[11px] font-bold uppercase tracking-wider ${group.titleClass}`;
+                    heading.textContent = `${group.title} (${group.items.length})`;
+
+                    const card = document.createElement('div');
+                    card.className = 'bg-white dark:bg-[#1C1C1E] rounded-2xl overflow-hidden divide-y divide-gray-200 dark:divide-gray-800 shadow-sm';
+
+                    group.items.forEach(bill => {
+                        card.appendChild(buildBillRow(bill));
+                    });
+
+                    section.appendChild(heading);
+                    section.appendChild(card);
+                    groupedEl.appendChild(section);
+                });
+            } else {
+                if (historyBills.length === 0) {
+                    groupedEl.classList.add('hidden');
+                    emptyTextEl.innerHTML = 'Nenhuma conta no histórico dos últimos 2 meses.';
+                    emptyEl.classList.remove('hidden');
+                    return;
+                }
+
+                emptyEl.classList.add('hidden');
+                groupedEl.classList.remove('hidden');
+
+                historyMonthKeys.forEach(mKey => {
+                    const monthItems = historyBills
+                        .filter(b => getMonthKeyFromDateStr(b.dueDate) === mKey)
+                        .sort(byDueDate);
+
+                    if (monthItems.length === 0) return;
+
+                    const section = document.createElement('section');
+                    section.className = 'space-y-1';
+
+                    const heading = document.createElement('h2');
+                    heading.className = 'px-1 text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400';
+                    heading.textContent = `${formatMonthLabel(mKey)} (${monthItems.length})`;
+
+                    const card = document.createElement('div');
+                    card.className = 'bg-white dark:bg-[#1C1C1E] rounded-2xl overflow-hidden divide-y divide-gray-200 dark:divide-gray-800 shadow-sm';
+
+                    monthItems.forEach(bill => {
+                        card.appendChild(buildBillRow(bill));
+                    });
+
+                    section.appendChild(heading);
+                    section.appendChild(card);
+                    groupedEl.appendChild(section);
+                });
+            }
+        }
+
+        function escapeHTML(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>
