@@ -101,6 +101,12 @@ input[type=checkbox].tg{appearance:none;-webkit-appearance:none;width:44px;heigh
 .acc-btns{display:flex;gap:10px;margin-top:16px}
 .acc-btns button{flex:1;padding:12px;border-radius:12px;font-weight:600;background:var(--fld)}
 .acc-btns .d{background:#DC2626;color:#fff}.acc-btns button:disabled{opacity:.6}
+.pol{position:fixed;inset:0;z-index:80;background:var(--bg);display:flex;flex-direction:column}
+.pol-hd{display:flex;justify-content:space-between;align-items:center;padding:calc(env(safe-area-inset-top) + 10px) 16px 10px;border-bottom:1px solid var(--line)}
+.pol-hd button{color:var(--blue);font-weight:600;width:60px;text-align:left}.pol-hd span{width:60px}
+.pol iframe{flex:1;border:0;width:100%;background:var(--bg)}
+.upd{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(92px + env(safe-area-inset-bottom));z-index:65;display:flex;align-items:center;gap:12px;white-space:nowrap;background:var(--ink);color:var(--bg);padding:8px 8px 8px 16px;border-radius:999px;font-size:14px;font-weight:600;box-shadow:0 6px 20px rgba(0,0,0,.3)}
+.upd button{background:var(--blue);color:#fff;padding:6px 14px;border-radius:999px;font-weight:700}
 </style>
 </head>
 <body>
@@ -117,12 +123,13 @@ input[type=checkbox].tg{appearance:none;-webkit-appearance:none;width:44px;heigh
       <div class="in hide" id="name-row"><input id="name" placeholder="Seu nome" autocomplete="name"></div>
       <div class="in"><input id="email" type="email" required placeholder="E-mail" autocomplete="email"></div>
       <div class="in"><input id="pass" type="password" required placeholder="Senha" autocomplete="current-password"></div>
+      <div class="in hide" id="pass2-row"><input id="pass2" type="password" placeholder="Repita a senha" autocomplete="new-password"></div>
     </div>
     <p id="err" class="hide"></p>
     <button id="go" class="btn" type="submit">Entrar</button>
     <button id="toggle" class="lnk" type="button" onclick="setMode(mode=='login'?'signup':'login')">Primeiro acesso? Criar conta</button>
     <button id="forgot" class="lnk mut" type="button" onclick="forgot()">Esqueci minha senha</button>
-    <p class="legal">Ao criar uma conta, você concorda com a <a href="privacidade.html">Política de Privacidade</a>.</p>
+    <p class="legal">Ao criar uma conta, você concorda com a <a href="privacidade.html" onclick="openPolicy(event)">Política de Privacidade</a>.</p>
   </form>
 </div>
 
@@ -149,7 +156,7 @@ input[type=checkbox].tg{appearance:none;-webkit-appearance:none;width:44px;heigh
     </div>
     <div id="empty" class="hide"><p id="empty-t"></p></div>
     <div id="list"></div>
-    <p class="legal"><a href="privacidade.html">Política de Privacidade</a> · <button class="dl" onclick="openDelAcc()">Excluir minha conta</button></p>
+    <p class="legal"><a href="privacidade.html" onclick="openPolicy(event)">Política de Privacidade</a> · <button class="dl" onclick="openDelAcc()">Excluir minha conta</button></p>
   </main>
 
   <div class="fab"><button onclick="openModal()" aria-label="Nova conta"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button></div>
@@ -169,11 +176,17 @@ input[type=checkbox].tg{appearance:none;-webkit-appearance:none;width:44px;heigh
       <div class="f"><label for="b-amount">Valor (opcional)</label><input id="b-amount" class="fi" type="number" step="0.01" min="0" inputmode="decimal" placeholder="0,00" style="width:8rem"></div>
       <div class="f"><label for="b-date">Vencimento</label><input id="b-date" class="fi" type="date" onchange="validate()"></div>
       <label class="f" for="b-rec"><div>Repetir mensalmente<small>Cria a conta do próximo mês ao marcar como paga</small></div><input id="b-rec" class="tg" type="checkbox"></label>
+      <label class="f" id="cal-row" for="b-cal"><div>Adicionar ao Calendário<small>Abre o Calendário assim que você salvar</small></div><input id="b-cal" class="tg" type="checkbox"></label>
     </div>
     <button id="m-cal" class="wide hide" onclick="calFromForm()">Adicionar vencimento ao Calendário</button>
     <button id="m-del" class="wide d hide" onclick="del(editingId);closeModal()">Excluir conta</button>
   </div>
 </div></div>
+
+<!-- POLÍTICA DE PRIVACIDADE (abre dentro do app) -->
+<div id="policy" class="pol hide"><div class="pol-hd"><button onclick="closePolicy()">Fechar</button><b>Política de Privacidade</b><span></span></div><iframe id="pol-f" title="Política de Privacidade"></iframe></div>
+
+<div id="upd" class="upd hide" role="status"><span>Nova versão disponível</span><button onclick="location.reload()">Atualizar</button></div>
 
 <!-- EXCLUIR CONTA -->
 <div id="acc" class="acc-bd hide"><div class="acc-box" role="dialog" aria-labelledby="acc-t">
@@ -212,6 +225,7 @@ function setMode(m){mode=m;const s=m=='signup';
   $('sub').textContent=s?'Crie sua conta para organizar suas contas':'Faça login para acessar suas contas';
   $('name-row').classList.toggle('hide',!s);$('forgot').classList.toggle('hide',s);
   $('pass').autocomplete=s?'new-password':'current-password';
+  $('pass2-row').classList.toggle('hide',!s);$('pass2').required=s;$('pass2').value='';
   $('pass').placeholder=s?'Crie uma senha (mín. 6 caracteres)':'Senha';
   $('go').textContent=s?'Criar conta':'Entrar';
   $('toggle').textContent=s?'Já tenho conta. Fazer login':'Primeiro acesso? Criar conta';
@@ -229,7 +243,9 @@ function authMsg(c){c=String(c||'');
   return'Não foi possível concluir ('+(c||'erro')+'). Tente novamente.'}
 async function submitAuth(e){e.preventDefault();
   const em=$('email').value.trim(),pw=$('pass').value,nm=$('name').value.trim(),err=$('err');
-  err.classList.add('hide');$('go').disabled=true;
+  err.classList.add('hide');
+  if(mode=='signup'&&pw!==$('pass2').value){err.textContent='As senhas não conferem. Digite a mesma senha nos dois campos.';err.classList.remove('hide');return}
+  $('go').disabled=true;
   try{
     if(mode=='signup'){
       const c=await auth.createUserWithEmailAndPassword(em,pw);
@@ -268,8 +284,7 @@ function calendar(b){
     setTimeout(()=>{a.remove();URL.revokeObjectURL(url)},1000);
   }else{
     const p=new URLSearchParams({action:'TEMPLATE',text:'Vencimento: '+b.name,dates:`${st}/${en}`,details:desc});
-    window.open('https://calendar.google.com/calendar/render?'+p,'_blank','noopener,noreferrer')}
-  toast(`Evento de "${b.name}" enviado para o Calendário.`)}
+    window.open('https://calendar.google.com/calendar/render?'+p,'_blank','noopener,noreferrer')}}
 function calFromForm(){const name=$('b-name').value.trim(),dueDate=$('b-date').value,r=$('b-amount').value;
   if(name&&dueDate)calendar({id:editingId,name,amount:r!==''?Number(r):null,dueDate})}
 
@@ -292,7 +307,8 @@ function openModal(id){closeSwipes();clearTimeout(closeModal.t);editingId=id||nu
   $('b-name').value=b?b.name:'';$('b-amount').value=b&&b.amount!=null?b.amount:'';
   if(b)$('b-date').value=b.dueDate;else{const d=new Date();d.setDate(d.getDate()+3);$('b-date').value=iso(d)}
   $('b-rec').checked=!!(b&&b.isRecurring);
-  $('m-cal').classList.toggle('hide',!b);$('m-del').classList.toggle('hide',!b);validate();
+  $('m-cal').classList.toggle('hide',!b);$('m-del').classList.toggle('hide',!b);
+  $('cal-row').classList.toggle('hide',!!b);$('b-cal').checked=false;validate();
   $('backdrop').classList.remove('hide');$('sheet').classList.remove('hide');void $('sheet').offsetWidth;
   $('backdrop').classList.add('on');$('sheet').classList.add('open');
   setTimeout(()=>$('b-name').focus(),150)}
@@ -302,7 +318,8 @@ function save(){
   const name=$('b-name').value.trim(),dueDate=$('b-date').value,raw=$('b-amount').value;
   if(!name||!dueDate)return;
   const data={name,amount:raw!==''?Number(raw):null,dueDate,isRecurring:$('b-rec').checked,recurDay:parse(dueDate).getDate()};
-  const id=editingId;closeModal();
+  const id=editingId,wantCal=!id&&$('b-cal').checked;closeModal();
+  if(wantCal)calendar({id:'n'+Date.now(),name,amount:data.amount,dueDate});
   run(async()=>{if(id)await col().doc(id).update(data);else await col().add({...data,isPaid:false,nextGenerated:false})})}
 
 /* ---------- arrastar para excluir ---------- */
@@ -394,7 +411,21 @@ try{
   db.enablePersistence({synchronizeTabs:true}).catch(()=>{});
   auth.onAuthStateChanged(onUser);
 }catch(e){$('login').classList.remove('hide');toast('Não foi possível iniciar. Verifique a conexão com a internet.',1)}
-if('serviceWorker' in navigator)addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
+/* ---------- política dentro do app ---------- */
+function openPolicy(e){if(e)e.preventDefault();const f=$('pol-f');if(!f.getAttribute('src'))f.src='privacidade.html';$('policy').classList.remove('hide')}
+function closePolicy(){$('policy').classList.add('hide')}
+
+/* ---------- atualização automática ---------- */
+let base=null;
+const showUpd=()=>$('upd').classList.remove('hide');
+async function stamp(){const t=await(await fetch('index.html',{cache:'no-store'})).text();let h=0;for(let i=0;i<t.length;i++)h=(h*31+t.charCodeAt(i))|0;return h}
+async function checkUpdate(){try{const h=await stamp();if(base===null)base=h;else if(h!==base)showUpd()}catch(e){}}
+if('serviceWorker' in navigator){
+  let had=!!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener('controllerchange',()=>{if(had)showUpd();had=true});
+  addEventListener('load',()=>{navigator.serviceWorker.register('sw.js').then(r=>{
+    const chk=()=>{r.update().catch(()=>{});checkUpdate()};
+    chk();document.addEventListener('visibilitychange',()=>{if(!document.hidden)chk()});setInterval(chk,30*60*1000)}).catch(()=>{})})}
 </script>
 </body>
 </html>
