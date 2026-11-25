@@ -91,6 +91,16 @@ input[type=checkbox].tg{appearance:none;-webkit-appearance:none;width:44px;heigh
 .wide.d{color:var(--red);font-weight:500}
 .toast{position:fixed;top:calc(env(safe-area-inset-top) + 8px);left:16px;right:16px;z-index:70;background:var(--blue);color:#fff;font-size:13px;font-weight:600;text-align:center;padding:10px;border-radius:12px;box-shadow:0 6px 20px rgba(0,0,0,.25)}
 .toast.err{background:#DC2626}
+.legal .dl{color:var(--red);font-size:12px;text-decoration:underline;padding:0}
+.acc-bd{position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:20px}
+.acc-box{background:var(--card);border-radius:16px;padding:20px;width:100%;max-width:24rem;box-shadow:0 10px 40px rgba(0,0,0,.35)}
+.acc-box h2{font-size:18px;margin-bottom:8px}
+.acc-box p{font-size:14px;color:var(--mut);line-height:1.45}
+.acc-box input{background:var(--fld);padding:12px;border-radius:10px;margin-top:14px}
+#acc-err{color:var(--red);font-weight:500;margin-top:10px}
+.acc-btns{display:flex;gap:10px;margin-top:16px}
+.acc-btns button{flex:1;padding:12px;border-radius:12px;font-weight:600;background:var(--fld)}
+.acc-btns .d{background:#DC2626;color:#fff}.acc-btns button:disabled{opacity:.6}
 </style>
 </head>
 <body>
@@ -139,7 +149,7 @@ input[type=checkbox].tg{appearance:none;-webkit-appearance:none;width:44px;heigh
     </div>
     <div id="empty" class="hide"><p id="empty-t"></p></div>
     <div id="list"></div>
-    <p class="legal"><a href="privacidade.html">Política de Privacidade</a></p>
+    <p class="legal"><a href="privacidade.html">Política de Privacidade</a> · <button class="dl" onclick="openDelAcc()">Excluir minha conta</button></p>
   </main>
 
   <div class="fab"><button onclick="openModal()" aria-label="Nova conta"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button></div>
@@ -163,6 +173,15 @@ input[type=checkbox].tg{appearance:none;-webkit-appearance:none;width:44px;heigh
     <button id="m-cal" class="wide hide" onclick="calFromForm()">Adicionar vencimento ao Calendário</button>
     <button id="m-del" class="wide d hide" onclick="del(editingId);closeModal()">Excluir conta</button>
   </div>
+</div></div>
+
+<!-- EXCLUIR CONTA -->
+<div id="acc" class="acc-bd hide"><div class="acc-box" role="dialog" aria-labelledby="acc-t">
+  <h2 id="acc-t">Excluir minha conta</h2>
+  <p>Isso apaga <b>para sempre</b> o seu login e todas as contas que você cadastrou. Não dá para desfazer.</p>
+  <input id="acc-pass" type="password" placeholder="Digite sua senha para confirmar" autocomplete="current-password">
+  <p id="acc-err" class="hide"></p>
+  <div class="acc-btns"><button onclick="closeDelAcc()">Cancelar</button><button id="acc-go" class="d" onclick="deleteAccount()">Excluir tudo</button></div>
 </div></div>
 
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js" crossorigin="anonymous"></script>
@@ -344,6 +363,30 @@ function render(){
     $('empty-t').textContent='Nenhuma conta no histórico dos últimos 2 meses.';
     $('empty').classList.toggle('hide',hisB.length>0);
     hist.forEach(k=>section(monthLabel(k),hisB.filter(b=>mkey(b.dueDate)==k).sort(by),'mut'))}}
+
+/* ---------- excluir conta ---------- */
+function openDelAcc(){$('acc-pass').value='';$('acc-err').classList.add('hide');$('acc').classList.remove('hide');setTimeout(()=>$('acc-pass').focus(),100)}
+function closeDelAcc(){$('acc').classList.add('hide')}
+async function deleteAccount(){
+  const u=auth&&auth.currentUser,pw=$('acc-pass').value,err=$('acc-err'),btn=$('acc-go');
+  const fail=m=>{err.textContent=m;err.classList.remove('hide')};
+  err.classList.add('hide');if(!u)return;
+  if(!navigator.onLine)return fail('Conecte-se à internet para excluir a conta.');
+  if(!pw)return fail('Digite sua senha para confirmar.');
+  btn.disabled=true;btn.textContent='Excluindo...';
+  try{
+    await u.reauthenticateWithCredential(firebase.auth.EmailAuthProvider.credential(u.email,pw));
+    if(unsub){unsub();unsub=null}
+    const c=db.collection('users').doc(u.uid).collection('bills');let snap;
+    do{snap=await c.limit(400).get();if(snap.size){const b=db.batch();snap.docs.forEach(d=>b.delete(d.ref));await b.commit()}}while(snap.size);
+    await u.delete();
+    closeDelAcc();toast('Sua conta e seus dados foram excluídos.');
+  }catch(x){
+    const code=String(x&&x.code||'');
+    fail(/invalid-credential|wrong-password/.test(code)?'Senha incorreta.':/requires-recent-login/.test(code)?'Por segurança, saia do app, entre de novo e tente excluir.':authMsg(code));
+    if(auth.currentUser&&!unsub)onUser(auth.currentUser);
+  }
+  btn.disabled=false;btn.textContent='Excluir tudo'}
 
 /* ---------- início ---------- */
 try{
