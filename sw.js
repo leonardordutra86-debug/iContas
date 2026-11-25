@@ -1,5 +1,5 @@
 // Troque o número da versão sempre que atualizar o app, para os celulares pegarem a novidade.
-const V = 'contas-v4';
+const V = 'contas-v5';
 const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'icon.png'];
 
 self.addEventListener('install', e => {
@@ -23,7 +23,11 @@ self.addEventListener('fetch', e => {
   if (r.mode === 'navigate') {
     e.respondWith(
       fetch(r)
-        .then(res => { const cp = res.clone(); caches.open(V).then(c => c.put(r, cp)); return res; })
+        .then(res => {
+          if (res.ok) { const cp = res.clone(); caches.open(V).then(c => c.put(r, cp)); return res; }
+          // página com erro (ex.: falha do GitHub): usa a cópia guardada, se houver
+          return caches.match(r).then(m => m || res);
+        })
         .catch(() => caches.match(r).then(m => m || caches.match('index.html')))
     );
     return;
