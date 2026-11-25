@@ -31,6 +31,7 @@ input{font:inherit;color:inherit;background:transparent;border:0;outline:0;width
 .btn{width:100%;background:var(--blue);color:#fff;font-weight:600;padding:14px;border-radius:16px;margin-top:16px}
 .btn:disabled{opacity:.6}
 .lnk{color:var(--blue);font-size:14px;font-weight:600;padding:8px;display:block;margin:6px auto 0}
+.legal{font-size:12px;color:var(--mut);text-align:center;margin-top:18px}.legal a{color:var(--blue)}
 #err{color:var(--red);font-size:14px;font-weight:500;text-align:center;margin-top:12px}
 .hd{position:sticky;top:0;z-index:30;background:var(--bg);padding:calc(env(safe-area-inset-top) + 8px) 16px 8px;border-bottom:1px solid var(--line)}
 .hd-in,.main{max-width:32rem;margin:0 auto}
@@ -111,6 +112,7 @@ input[type=checkbox].tg{appearance:none;-webkit-appearance:none;width:44px;heigh
     <button id="go" class="btn" type="submit">Entrar</button>
     <button id="toggle" class="lnk" type="button" onclick="setMode(mode=='login'?'signup':'login')">Primeiro acesso? Criar conta</button>
     <button id="forgot" class="lnk mut" type="button" onclick="forgot()">Esqueci minha senha</button>
+    <p class="legal">Ao criar uma conta, você concorda com a <a href="privacidade.html">Política de Privacidade</a>.</p>
   </form>
 </div>
 
@@ -137,6 +139,7 @@ input[type=checkbox].tg{appearance:none;-webkit-appearance:none;width:44px;heigh
     </div>
     <div id="empty" class="hide"><p id="empty-t"></p></div>
     <div id="list"></div>
+    <p class="legal"><a href="privacidade.html">Política de Privacidade</a></p>
   </main>
 
   <div class="fab"><button onclick="openModal()" aria-label="Nova conta"><svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button></div>
