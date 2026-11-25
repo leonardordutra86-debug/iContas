@@ -1,5 +1,5 @@
 // Troque o número da versão sempre que atualizar o app, para os celulares pegarem a novidade.
-const V = 'contas-v2';
+const V = 'contas-v3';
 const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'icon.png'];
 
 self.addEventListener('install', e => {
